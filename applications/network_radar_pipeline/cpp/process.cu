@@ -147,12 +147,12 @@ void ThreePulseCancellerOp::initialize() {
   numCompressedSamples = num_samples.get() - waveform_length.get() + 1;
   make_tensor(tpcView, {num_channels.get(), num_pulses_rnd, numCompressedSamples});
   make_tensor(cancelMask, {3});
-  cancelMask.SetVals({1, -2, 1});
 
   cudaMemset(tpcView.Data(), 0, tpcView.TotalSize() * sizeof(complex_t));
 
   tpcView.PrefetchDevice(0);
   cancelMask.PrefetchDevice(0);
+  cancelMask.SetVals({1, -2, 1});
   HOLOSCAN_LOG_INFO("ThreePulseCancellerOp::initialize() done");
 }
 

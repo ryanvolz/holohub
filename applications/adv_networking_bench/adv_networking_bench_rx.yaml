@@ -28,15 +28,15 @@ scheduler:
 advanced_network:
   cfg:
     version: 1
-    master_core: 5              # Master CPU core
+    master_core: 4              # Master CPU core
     rx:
-      - if_name: 0005:03:00.1       # PCIe BFD of NIC
+      - if_name: 0005:01:00.0       # PCIe BFD of NIC
         flow_isolation: true
         queues:
           - name: "Default"
             id: 0
             gpu_direct: false
-            cpu_cores: "10"
+            cpu_cores: "5"
             max_packet_size: 9000        # Maximum payload size
             num_concurrent_batches: 32767   # Number of batches that can be used at any time
             batch_size: 1              # Number of packets in a batch
@@ -46,7 +46,7 @@ advanced_network:
             gpu_device: 0
             gpu_direct: true
             split_boundary: 0
-            cpu_cores: "11"
+            cpu_cores: "6"
             max_packet_size: 9000     # Maximum payload size
             num_concurrent_batches: 15   # Number of batches that can be used at any time
             batch_size: 5120              # Number of packets in a batch

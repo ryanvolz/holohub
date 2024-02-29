@@ -43,7 +43,7 @@ add_library(holoscan::advanced_network_tx ALIAS advanced_network_tx)
 #set(DPDK_OUTPUT_PATH /tmp/dpdk-22.11/out)
 #set(ENV{PKG_CONFIG_PATH} "${DPDK_OUTPUT_PATH}/lib/aarch64-linux-gnu/pkgconfig")
 
-set(DPDK_EXTRA_LIBS -Wl,--no-whole-archive -lmlx5 -libverbs -pthread -lnuma -ldl)
+set(DPDK_EXTRA_LIBS -Wl,--no-whole-archive -lmlx5 -libverbs -pthread -ldl)
 
 pkg_check_modules(DPDK REQUIRED libdpdk)
 

@@ -29,28 +29,28 @@ tx_params:
   use_ano: true
   samples_per_packet: 1024
   header_size: 42
-  udp_src_port: 4096               # UDP source port
-  udp_dst_port: 4096               # UDP destination port
-  ip_src_addr: 192.168.200.15      # Source IP send from
-  ip_dst_addr: 192.168.200.17      # Destination IP to send to
+  udp_src_port: 60000               # UDP source port
+  udp_dst_port: 60000               # UDP destination port
+  ip_src_addr: 10.17.16.20      # Source IP send from
+  ip_dst_addr: 10.17.16.10      # Destination IP to send to
   eth_dst_addr: a0:88:c2:67:75:cc  # Destination MAC to populate
   port_id: 0
 
 basic_network:
   batch_size: 100            # RX message batch size
   max_payload_size: 8208     # Max bytes of single packet (stride)
-  dst_port: 4096             # Destination port
+  dst_port: 60000            # Destination port
   l4_proto: "udp"            # Protocol ('udp' or "tcp")
-  ip_addr: "192.168.200.17"  # Destination IP address
+  ip_addr: "10.17.16.10"     # Destination IP address
   min_ipg_ns: 0              # Minimum inter-packet gap (nano-seconds)
   retry_connect: 1
 
 advanced_network:
   cfg:
     version: 1
-    master_core: 16             # Master CPU core
+    master_core: 3             # Master CPU core
     tx:
-      - if_name: 0000:81:00.0   # PCIe BFD of NIC
+      - if_name: 0005:01:00.0   # PCIe BFD of NIC
         queues:
           - name: "ADC Samples"
             id: 0
@@ -60,11 +60,11 @@ advanced_network:
             max_packet_size: 9000      # Maximum payload size
             num_concurrent_batches: 5  # Number of batches that can be used at any time
             batch_size: 10240          # Number of packets in a batch
-            cpu_cores: "17"            # CPU cores for transmitting
+            cpu_cores: "7"            # CPU cores for transmitting
 
 radar_pipeline:
   is_source: true      # Defines app type (source, process)
-  data_rate: 95        # (Gbps)
+  data_rate: 1         # (Gbps)
   num_transmits: 1000  # Use N-1 of num_transmits in source
   num_pulses: 128
   num_samples: 9000

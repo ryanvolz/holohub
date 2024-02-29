@@ -121,11 +121,20 @@ std::optional<struct rte_pktmbuf_extmem> DpdkMgr::allocate_gpu_pktmbuf(
   cudaSetDevice(gpu_dev);
   cudaFree(0);
 
-  CUdeviceptr ptr;
-  const auto alloc_res = cuMemAlloc(&ptr, ext_mem.buf_len);
+  const auto alloc_res = cuMemHostAlloc(&ext_mem.buf_ptr, ext_mem.buf_len, 0);
   if (alloc_res != CUDA_SUCCESS) {
     HOLOSCAN_LOG_CRITICAL("Could not allocate {:.2f}MB of GPU memory: {}",
                         ext_mem.buf_len/1e6, alloc_res);
+    return std::nullopt;
+  } else {
+    HOLOSCAN_LOG_INFO("Allocated {:.2f}MB on GPU", ext_mem.buf_len/1e6);
+  }
+
+  CUdeviceptr ptr;
+  const auto devptr_res = cuMemHostGetDevicePointer(&ptr, ext_mem.buf_ptr, 0);
+  if (devptr_res != CUDA_SUCCESS) {
+    HOLOSCAN_LOG_CRITICAL("Could not get device pointer corresponding to host pointer {}, result: {}",
+                        ext_mem.buf_ptr, devptr_res);
     return std::nullopt;
   } else {
     HOLOSCAN_LOG_INFO("Allocated {:.2f}MB on GPU", ext_mem.buf_len/1e6);
@@ -138,8 +147,6 @@ std::optional<struct rte_pktmbuf_extmem> DpdkMgr::allocate_gpu_pktmbuf(
     HOLOSCAN_LOG_CRITICAL("Could not set pointer attributes");
     return std::nullopt;
   }
-
-  ext_mem.buf_ptr = reinterpret_cast<decltype(ext_mem.buf_ptr)>(ptr);
 
   ret = rte_extmem_register(ext_mem.buf_ptr, ext_mem.buf_len, NULL, ext_mem.buf_iova,
         GPU_PAGE_SIZE);

@@ -40,6 +40,7 @@ class AdvConnectorOpTx : public Operator {
 
   void setup(OperatorSpec& spec) override;
   void initialize() override;
+  void start() override;
   void compute(InputContext& op_input,
                OutputContext& op_output,
                ExecutionContext& context) override;

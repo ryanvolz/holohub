@@ -143,6 +143,13 @@ void AdvConnectorOpTx::initialize() {
     HOLOSCAN_LOG_INFO("Initialized {} streams and events", num_concurrent);
   }
 
+  HOLOSCAN_LOG_INFO("AdvConnectorOpTx::initialize() complete");
+}
+
+void AdvConnectorOpTx::start() {
+  HOLOSCAN_LOG_INFO("AdvConnectorOpTx::start()");
+  holoscan::Operator::start();
+
   adv_net_format_eth_addr(eth_dst_, eth_dst_addr_.get());
   inet_pton(AF_INET, ip_src_addr_.get().c_str(), &ip_src_);
   inet_pton(AF_INET, ip_dst_addr_.get().c_str(), &ip_dst_);
@@ -151,7 +158,7 @@ void AdvConnectorOpTx::initialize() {
   ip_src_ = ntohl(ip_src_);
   ip_dst_ = ntohl(ip_dst_);
 
-  HOLOSCAN_LOG_INFO("AdvConnectorOpTx::initialize() complete");
+  HOLOSCAN_LOG_INFO("AdvConnectorOpTx::start() complete");
 }
 
 /**

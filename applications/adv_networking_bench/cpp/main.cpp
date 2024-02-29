@@ -83,14 +83,6 @@ class AdvNetworkingBenchTxOp : public Operator {
       }
     }
 
-    adv_net_format_eth_addr(eth_dst_, eth_dst_addr_.get());
-    inet_pton(AF_INET, ip_src_addr_.get().c_str(), &ip_src_);
-    inet_pton(AF_INET, ip_dst_addr_.get().c_str(), &ip_dst_);
-
-    // ANO expects host order when setting
-    ip_src_ = ntohl(ip_src_);
-    ip_dst_ = ntohl(ip_dst_);
-
     if (gpu_direct_.get()) {
       for (int n = 0; n < num_concurrent; n++) {
         cudaMallocHost(&gpu_bufs[n], sizeof(uint8_t**) * batch_size_.get());
@@ -99,6 +91,22 @@ class AdvNetworkingBenchTxOp : public Operator {
       }
       HOLOSCAN_LOG_INFO("Initialized {} streams and events", num_concurrent);
     }
+
+
+    HOLOSCAN_LOG_INFO("AdvNetworkingBenchTxOp::initialize() complete");
+  }
+
+  void start() override {
+    HOLOSCAN_LOG_INFO("AdvNetworkingBenchTxOp::start()");
+    holoscan::Operator::start();
+
+    adv_net_format_eth_addr(eth_dst_, eth_dst_addr_.get());
+    inet_pton(AF_INET, ip_src_addr_.get().c_str(), &ip_src_);
+    inet_pton(AF_INET, ip_dst_addr_.get().c_str(), &ip_dst_);
+
+    // ANO expects host order when setting
+    ip_src_ = ntohl(ip_src_);
+    ip_dst_ = ntohl(ip_dst_);
 
     // TX GPU-only mode
     // This section simply serves as an example to get an Eth+IP+UDP header onto the GPU,
@@ -136,8 +144,7 @@ class AdvNetworkingBenchTxOp : public Operator {
       }
     }
 
-
-    HOLOSCAN_LOG_INFO("AdvNetworkingBenchTxOp::initialize() complete");
+    HOLOSCAN_LOG_INFO("AdvNetworkingBenchTxOp::start() complete");
   }
 
   void setup(OperatorSpec& spec) override {

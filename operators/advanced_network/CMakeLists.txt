@@ -19,6 +19,9 @@ find_package(holoscan 0.6 REQUIRED CONFIG
              PATHS "/opt/nvidia/holoscan" "/workspace/holoscan-sdk/install")
 find_package(PkgConfig)
 
+if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
+  set(CMAKE_CUDA_ARCHITECTURES native)
+endif()
 enable_language(CUDA)
 
 add_library(advanced_network_common SHARED
@@ -51,7 +54,7 @@ target_compile_options(advanced_network_common PUBLIC ${DPDK_CFLAGS})
 target_compile_options(advanced_network_rx PUBLIC ${DPDK_CFLAGS})
 target_compile_options(advanced_network_tx PUBLIC ${DPDK_CFLAGS})
 
-target_link_libraries(advanced_network_common holoscan::core ${DPDK_EXTRA_LIBS} ${DPDK_LIBRARIES})
+target_link_libraries(advanced_network_common holoscan::core CUDA::cuda_driver ${DPDK_EXTRA_LIBS} ${DPDK_LIBRARIES})
 target_link_libraries(advanced_network_rx advanced_network_common)
 target_link_libraries(advanced_network_tx advanced_network_common)
 

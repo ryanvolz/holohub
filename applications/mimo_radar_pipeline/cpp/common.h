@@ -24,6 +24,13 @@ using namespace matx;
 using float_t = float;
 using complex_t = cuda::std::complex<float_t>;
 
+using real_t = int32_t;
+struct complex_int_type {
+  real_t r;
+  real_t i;
+} __attribute__((__packed__));
+using sample_t = complex_int_type;
+
 // Meta data for received signal
 struct RfMetaData {
   uint16_t sample_idx;
@@ -36,51 +43,47 @@ struct RfMetaData {
 
 // Represents a single channel of an RF transmission
 struct RFChannel {
-  tensor_t<complex_t, 2> data;
+  tensor_t<sample_t, 2> data;
   uint16_t waveform_id;
   uint16_t channel_id;
   cudaStream_t stream;
 
-  RFChannel(tensor_t<complex_t, 2> _data,
-            uint16_t _waveform_id,
-            uint16_t _channel_id,
+  RFChannel(tensor_t<sample_t, 2> _data, uint16_t _waveform_id, uint16_t _channel_id,
             cudaStream_t _stream)
-    : data{_data}, waveform_id{_waveform_id}, channel_id{_channel_id}, stream{_stream} {}
+      : data{_data}, waveform_id{_waveform_id}, channel_id{_channel_id}, stream{_stream} {}
 };
 
 // Represents a single RF transmission
 struct RFArray {
-  tensor_t<complex_t, 3> data;
+  tensor_t<sample_t, 3> data;
   uint16_t waveform_id;
   cudaStream_t stream;
 
-  RFArray(tensor_t<complex_t, 3> _data, uint16_t _waveform_id, cudaStream_t _stream)
-    : data{_data}, waveform_id{_waveform_id}, stream{_stream} {}
+  RFArray(tensor_t<sample_t, 3> _data, uint16_t _waveform_id, cudaStream_t _stream)
+      : data{_data}, waveform_id{_waveform_id}, stream{_stream} {}
 };
 
 // Used to represent the data passed over the network
 struct RFPacket {
  private:
-  uint8_t *payload;
+  uint8_t* payload;
 
  public:
-  static const size_t sample_offset     = 0;
+  static const size_t sample_offset = 0;
   static const size_t waveformid_offset = sizeof(uint16_t) + sample_offset;
-  static const size_t channel_offset    = sizeof(uint16_t) + waveformid_offset;
-  static const size_t pulse_offset      = sizeof(uint16_t) + channel_offset;
+  static const size_t channel_offset = sizeof(uint16_t) + waveformid_offset;
+  static const size_t pulse_offset = sizeof(uint16_t) + channel_offset;
   static const size_t num_sample_offset = sizeof(uint16_t) + pulse_offset;
-  static const size_t end_array_offset  = sizeof(uint16_t) + num_sample_offset;
+  static const size_t end_array_offset = sizeof(uint16_t) + num_sample_offset;
   // Setting the payload offset this way will prevent misaligned memory upon receipt
-  static const size_t payload_offset    = sizeof(complex_t) * (
-    (sizeof(uint16_t) + end_array_offset) / sizeof(complex_t) + 1);
+  static const size_t payload_offset =
+      sizeof(sample_t) * ((sizeof(uint16_t) + end_array_offset) / sizeof(sample_t) + 1);
 
  public:
   static size_t header_size() {
     return payload_offset;
   }
-  static size_t payload_size(const size_t num_samples) {
-    return num_samples * sizeof(complex_t);
-  }
+  static size_t payload_size(const size_t num_samples) { return num_samples * sizeof(sample_t); }
   static size_t packet_size(const size_t num_samples) {
     return header_size() + payload_size(num_samples);
   }
@@ -107,7 +110,7 @@ struct RFPacket {
   void set_end_array(uint16_t is_end) {
     memcpy(&payload[end_array_offset], &is_end, sizeof(uint16_t));
   }
-  void set_payload(complex_t *rf_data, cudaStream_t stream) {
+  void set_payload(sample_t* rf_data, cudaStream_t stream) {
     cudaMemcpyAsync(&payload[payload_offset],
                     rf_data,
                     payload_size(get_num_samples()),
@@ -156,7 +159,7 @@ struct RFPacket {
 // Compute the number of packets expected for an RF transmission
 inline size_t packets_per_pulse(const size_t packet_size,
                                 const size_t num_samples) {
-  const size_t samples_per_pkt = (packet_size - RFPacket::header_size()) / sizeof(complex_t);
+  const size_t samples_per_pkt = (packet_size - RFPacket::header_size()) / sizeof(sample_t);
   return std::ceil(static_cast<double>(num_samples) / samples_per_pkt);
 }
 

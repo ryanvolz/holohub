@@ -28,8 +28,8 @@ enable_language(CUDA)
 include(FetchContent)
 FetchContent_Declare(
   MatX
-  GIT_REPOSITORY https://github.com/NVIDIA/MatX.git
-  GIT_TAG v0.7.0
+  GIT_REPOSITORY https://github.com/ryanvolz/MatX.git
+  GIT_TAG mimo_radar
 )
 FetchContent_MakeAvailable(MatX)
 

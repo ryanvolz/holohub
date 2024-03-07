@@ -103,7 +103,17 @@ void PulseCompressionOp::compute(InputContext& op_input,
                                       {matxEnd, matxEnd, num_samples_rnd});
   auto data = slice<3>(zeroPaddedInput, {0, 0, 0}, {matxEnd, matxEnd, num_samples.get()});
   (zp = 0).run(stream);
-  matx::copy(data, in->data, stream);
+  // matx::copy(data, in->data, stream);
+  // instead of copy, convert the data from complex int to complex float
+  auto new_shp = in->data.Shape();
+  new_shp[2] = 2 * new_shp[2];
+  auto in_data_float_view = in->data.View<real_t, 3, typeof(new_shp)>(std::move(new_shp));
+  auto in_data_float =
+      matx::as_float(in_data_float_view) / (std::numeric_limits<real_t>::max() - 1);
+  (data.RealView() = matx::slice(in_data_float, {0, 0, 0}, {matxEnd, matxEnd, matxEnd}, {1, 1, 2}))
+      .run(stream);
+  (data.ImagView() = matx::slice(in_data_float, {0, 0, 1}, {matxEnd, matxEnd, matxEnd}, {1, 1, 2}))
+      .run(stream);
 
   (zeroPaddedInput = fft(zeroPaddedInput)).run(stream);
   (zeroPaddedInput = zeroPaddedInput * waveformFFT).run(stream);

@@ -42,20 +42,13 @@ void gen_meta_from_pkt_cnt(RfMetaData *meta,
 }
 #endif
 
-__global__
-void place_packet_data_kernel(complex_t *out,
-                              const void *const *const __restrict__ in,
-                              int *sample_cnt,
-                              bool *received_end,
-                              const size_t buffer_pos,
-                              const uint16_t pkt_len,
-                              const uint16_t buffer_size,
-                              const uint16_t num_channels,
-                              const uint16_t num_pulses,
-                              const uint16_t num_samples,
-                              const uint64_t total_pkts,
-                              const uint16_t pkts_per_pulse,
-                              const uint16_t max_waveform_id) {
+__global__ void place_packet_data_kernel(sample_t* out, const void* const* const __restrict__ in,
+                                         int* sample_cnt, bool* received_end,
+                                         const size_t buffer_pos, const uint16_t pkt_len,
+                                         const uint16_t buffer_size, const uint16_t num_channels,
+                                         const uint16_t num_pulses, const uint16_t num_samples,
+                                         const uint64_t total_pkts, const uint16_t pkts_per_pulse,
+                                         const uint16_t max_waveform_id) {
   const uint32_t channel_stride = static_cast<uint32_t>(num_samples) * num_pulses;
   const uint32_t buffer_stride  = num_channels * channel_stride;
   const uint32_t pkt_idx = blockIdx.x;
@@ -71,10 +64,10 @@ void place_packet_data_kernel(complex_t *out,
                         num_samples,
                         pkts_per_pulse,
                         max_waveform_id);
-  const complex_t *samples = reinterpret_cast<const complex_t *>(in[pkt_idx]);
+  const sample_t* samples = reinterpret_cast<const sample_t*>(in[pkt_idx]);
 #else
   const RfMetaData *meta   = reinterpret_cast<const RfMetaData *>(in[pkt_idx]);
-  const complex_t *samples = reinterpret_cast<const complex_t *>(in[pkt_idx]) + 2;
+  const sample_t* samples = reinterpret_cast<const sample_t*>(meta + 1);
 #endif
 
   // Make sure this isn't wrapping the buffer - drop if it is
@@ -105,20 +98,12 @@ void place_packet_data_kernel(complex_t *out,
   }
 }
 
-void place_packet_data(complex_t *out,
-                       const void *const *const in,
-                       int *sample_cnt,
-                       bool *received_end,
-                       const size_t buffer_pos,
-                       const uint16_t pkt_len,
-                       const uint32_t num_pkts,
-                       const uint16_t buffer_size,
-                       const uint16_t num_channels,
-                       const uint16_t num_pulses,
-                       const uint16_t num_samples,
-                       const uint64_t total_pkts,
-                       const uint16_t pkts_per_pulse,
-                       const uint16_t max_waveform_id,
+void place_packet_data(sample_t* out, const void* const* const in, int* sample_cnt,
+                       bool* received_end, const size_t buffer_pos, const uint16_t pkt_len,
+                       const uint32_t num_pkts, const uint16_t buffer_size,
+                       const uint16_t num_channels, const uint16_t num_pulses,
+                       const uint16_t num_samples, const uint64_t total_pkts,
+                       const uint16_t pkts_per_pulse, const uint16_t max_waveform_id,
                        cudaStream_t stream) {
   // Each thread processes an individual packet
   place_packet_data_kernel<<<num_pkts, 128, buffer_size*sizeof(int), stream>>>(
@@ -221,7 +206,7 @@ void AdvConnectorOpRx::initialize() {
 
 #if SPOOF_PACKET_DATA
   // Compute packets delivered per pulse and max waveform ID based on parameters
-  const size_t spoof_pkt_size = sizeof(complex_t) * SPOOF_SAMPLES_PER_PKT + RFPacket::header_size();
+  const size_t spoof_pkt_size = sizeof(sample_t) * SPOOF_SAMPLES_PER_PKT + RFPacket::header_size();
   pkts_per_pulse  = static_cast<uint16_t>(packets_per_pulse(spoof_pkt_size, num_samples_.get()));
   max_waveform_id = static_cast<uint16_t>(
     buffer_size_.get() * (65535 / buffer_size_.get()));  // Max of uint16_t

@@ -20,37 +20,33 @@
 
 // ---------- Structures ----------
 struct PulseCompressionData {
-  PulseCompressionData(tensor_t<complex_t, 1> *_waveformView,
-                       tensor_t<complex_t, 3> *_inputView,
+  PulseCompressionData(tensor_t<complex_t, 1>* _waveformView, tensor_t<complex_t, 3>* _inputView,
                        cudaStream_t _stream)
-    : waveformView(_waveformView), inputView(_inputView), stream(_stream)  {}
-  tensor_t<complex_t, 1> *waveformView;
-  tensor_t<complex_t, 3> *inputView;
+      : waveformView(_waveformView), inputView(_inputView), stream(_stream) {}
+  tensor_t<complex_t, 1>* waveformView;
+  tensor_t<complex_t, 3>* inputView;
   cudaStream_t stream;
 };
 
 struct ThreePulseCancellerData {
-  ThreePulseCancellerData(tensor_t<complex_t, 3> _inputView,
-                          cudaStream_t _stream)
-    : inputView(_inputView), stream(_stream)  {}
+  ThreePulseCancellerData(tensor_t<complex_t, 3> _inputView, cudaStream_t _stream)
+      : inputView(_inputView), stream(_stream) {}
   tensor_t<complex_t, 3> inputView;
   cudaStream_t stream;
 };
 
 struct DopplerData {
-  DopplerData(tensor_t<complex_t, 3> _tpcView,
-              tensor_t<float_t, 1> _cancelMask,
+  DopplerData(tensor_t<complex_t, 3> _tpcView, tensor_t<float_t, 1> _cancelMask,
               cudaStream_t _stream)
-    : tpcView(_tpcView), cancelMask(_cancelMask), stream(_stream)  {}
+      : tpcView(_tpcView), cancelMask(_cancelMask), stream(_stream) {}
   tensor_t<complex_t, 3> tpcView;
   tensor_t<float_t, 1> cancelMask;
   cudaStream_t stream;
 };
 
 struct CFARData {
-  CFARData(tensor_t<complex_t, 3> _tpcView,
-           cudaStream_t _stream)
-    : tpcView(_tpcView), stream(_stream)  {}
+  CFARData(tensor_t<complex_t, 3> _tpcView, cudaStream_t _stream)
+      : tpcView(_tpcView), stream(_stream) {}
   tensor_t<complex_t, 3> tpcView;
   cudaStream_t stream;
 };

@@ -22,42 +22,31 @@ namespace holoscan::ops {
 void PulseCompressionOp::setup(OperatorSpec& spec) {
   spec.input<std::shared_ptr<RFArray>>("rf_in");
   spec.output<std::shared_ptr<ThreePulseCancellerData>>("pc_out");
-  spec.param(num_pulses,
-              "num_pulses",
-              "Number of pulses",
-              "Number of pulses per channel", {});
-  spec.param(num_channels,
-              "num_channels",
-              "Number of channels",
-              "Number of channels", {});
+  spec.param(num_samples, "num_samples", "Number of pulses", "Number of pulses per channel", {});
   spec.param(waveform_length,
               "waveform_length",
               "NWaveform length",
               "Length of waveform", {});
-  spec.param(num_samples,
-              "num_samples",
-              "Number of samples",
-              "Number of samples per channel", {});
+  spec.param(
+      num_subchannels, "num_subchannels", "Number of samples", "Number of samples per channel", {});
 }
 
 void PulseCompressionOp::initialize() {
   HOLOSCAN_LOG_INFO("PulseCompressionOp::initialize()");
   holoscan::Operator::initialize();
 
-  num_samples_rnd = 1;
-  while (num_samples_rnd < num_samples.get()) {
-    num_samples_rnd *= 2;
-  }
+  num_subchannels_rnd = 1;
+  while (num_subchannels_rnd < num_subchannels.get()) { num_subchannels_rnd *= 2; }
 
-  make_tensor(waveformView, {num_samples_rnd});
-  cudaMemset(waveformView.Data(), 0, num_samples_rnd * sizeof(complex_t));
+  make_tensor(waveformView, {num_subchannels_rnd});
+  cudaMemset(waveformView.Data(), 0, num_subchannels_rnd * sizeof(complex_t));
 
-  make_tensor(zeroPaddedInput, {num_channels.get(), num_pulses.get(), num_samples_rnd});
+  make_tensor(zeroPaddedInput, {num_samples.get(), num_subchannels_rnd});
 
   // Precondition FFT of waveform for matched filtering (assuming waveform is the
   // same for every pulse) this allows us to precompute waveform in frequency domain
   auto waveformPart = slice(waveformView, {0}, {waveform_length.get()});
-  auto waveformFull = slice(waveformView, {0}, {num_samples_rnd});
+  auto waveformFull = slice(waveformView, {0}, {num_subchannels_rnd});
 
   // Apply a Hamming window to the waveform to suppress sidelobes. Other
   // windows could be used as well (e.g., Taylor windows). Ultimately, it is
@@ -71,7 +60,7 @@ void PulseCompressionOp::initialize() {
   (waveformPart = waveformPart / norms).run();
 
   // Do FFT
-  (waveformFull = fft(waveformPart, num_samples_rnd)).run();
+  (waveformFull = fft(waveformPart, num_subchannels_rnd)).run();
   (waveformFull = conj(waveformFull)).run();
 
   HOLOSCAN_LOG_INFO("PulseCompressionOp::initialize() done");
@@ -94,26 +83,23 @@ void PulseCompressionOp::compute(InputContext& op_input,
   auto in = op_input.receive<std::shared_ptr<RFArray>>("rf_in").value();
   cudaStream_t stream = in->stream;
 
-  auto waveformFFT = clone<3>(waveformView, {num_channels.get(), num_pulses.get(), matxKeepDim});
+  auto waveformFFT = clone<2>(waveformView, {num_samples.get(), matxKeepDim});
 
-  HOLOSCAN_LOG_INFO("Dim: {}, {}, {}", in->data.Size(0), in->data.Size(1), in->data.Size(2));
+  HOLOSCAN_LOG_INFO("Dim: {}, {}", in->data.Size(0), in->data.Size(1));
 
   // Zero out the pad portion of the zero-padded input and copy the data portion
-  auto zp = slice<3>(zeroPaddedInput, {0, 0, num_samples.get()},
-                                      {matxEnd, matxEnd, num_samples_rnd});
-  auto data = slice<3>(zeroPaddedInput, {0, 0, 0}, {matxEnd, matxEnd, num_samples.get()});
+  auto zp = slice<2>(zeroPaddedInput, {0, num_subchannels.get()}, {matxEnd, num_subchannels_rnd});
+  auto data = slice<2>(zeroPaddedInput, {0, 0}, {matxEnd, num_subchannels.get()});
   (zp = 0).run(stream);
   // matx::copy(data, in->data, stream);
   // instead of copy, convert the data from complex int to complex float
   auto new_shp = in->data.Shape();
-  new_shp[2] = 2 * new_shp[2];
-  auto in_data_float_view = in->data.View<real_t, 3, typeof(new_shp)>(std::move(new_shp));
+  new_shp[1] = 2 * new_shp[1];
+  auto in_data_float_view = in->data.View<real_t, 2, typeof(new_shp)>(std::move(new_shp));
   auto in_data_float =
       matx::as_float(in_data_float_view) / (std::numeric_limits<real_t>::max() - 1);
-  (data.RealView() = matx::slice(in_data_float, {0, 0, 0}, {matxEnd, matxEnd, matxEnd}, {1, 1, 2}))
-      .run(stream);
-  (data.ImagView() = matx::slice(in_data_float, {0, 0, 1}, {matxEnd, matxEnd, matxEnd}, {1, 1, 2}))
-      .run(stream);
+  (data.RealView() = matx::slice(in_data_float, {0, 0}, {matxEnd, matxEnd}, {1, 2})).run(stream);
+  (data.ImagView() = matx::slice(in_data_float, {0, 1}, {matxEnd, matxEnd}, {1, 2})).run(stream);
 
   (zeroPaddedInput = fft(zeroPaddedInput)).run(stream);
   (zeroPaddedInput = zeroPaddedInput * waveformFFT).run(stream);
@@ -127,35 +113,24 @@ void PulseCompressionOp::compute(InputContext& op_input,
 void ThreePulseCancellerOp::setup(OperatorSpec& spec) {
   spec.input<std::shared_ptr<ThreePulseCancellerData>>("tpc_in");
   spec.output<std::shared_ptr<DopplerData>>("tpc_out");
-  spec.param(num_pulses,
-              "num_pulses",
-              "Number of pulses",
-              "Number of pulses per channel", {});
-  spec.param(num_channels,
-              "num_channels",
-              "Number of channels",
-              "Number of channels", {});
+  spec.param(num_samples, "num_samples", "Number of pulses", "Number of pulses per channel", {});
   spec.param(waveform_length,
               "waveform_length",
               "NWaveform length",
               "Length of waveform", {});
-  spec.param(num_samples,
-              "num_samples",
-              "Number of samples",
-              "Number of samples per channel", {});
+  spec.param(
+      num_subchannels, "num_subchannels", "Number of samples", "Number of samples per channel", {});
 }
 
 void ThreePulseCancellerOp::initialize() {
   HOLOSCAN_LOG_INFO("ThreePulseCancellerOp::initialize()");
   holoscan::Operator::initialize();
 
-  num_pulses_rnd = 1;
-  while (num_pulses_rnd <= num_pulses.get()) {
-    num_pulses_rnd *= 2;
-  }
+  num_samples_rnd = 1;
+  while (num_samples_rnd <= num_samples.get()) { num_samples_rnd *= 2; }
 
-  numCompressedSamples = num_samples.get() - waveform_length.get() + 1;
-  make_tensor(tpcView, {num_channels.get(), num_pulses_rnd, numCompressedSamples});
+  numCompressedSamples = num_subchannels.get() - waveform_length.get() + 1;
+  make_tensor(tpcView, {num_samples_rnd, numCompressedSamples});
   make_tensor(cancelMask, {3});
 
   cudaMemset(tpcView.Data(), 0, tpcView.TotalSize() * sizeof(complex_t));
@@ -189,10 +164,9 @@ void ThreePulseCancellerOp::compute(InputContext& op_input,
   HOLOSCAN_LOG_INFO("Three pulse canceller compute() called");
   auto tpc_data = op_input.receive<std::shared_ptr<ThreePulseCancellerData>>("tpc_in").value();
 
-  auto x = tpc_data->inputView.Permute({0, 2, 1}).Slice(
-      {0, 0, 0}, {num_channels.get(), numCompressedSamples, num_pulses.get()});
-  auto xo = tpcView.Permute({0, 2, 1}).Slice(
-      {0, 0, 0}, {num_channels.get(), numCompressedSamples, num_pulses.get()});
+  auto x =
+      tpc_data->inputView.Permute({1, 0}).Slice({0, 0}, {numCompressedSamples, num_samples.get()});
+  auto xo = tpcView.Permute({1, 0}).Slice({0, 0}, {numCompressedSamples, num_samples.get()});
   (xo = conv1d(x, cancelMask, matxConvCorrMode_t::MATX_C_MODE_SAME)).run(tpc_data->stream);
 
   auto params = std::make_shared<DopplerData>(tpcView, cancelMask, tpc_data->stream);
@@ -203,29 +177,20 @@ void ThreePulseCancellerOp::compute(InputContext& op_input,
 void DopplerOp::setup(OperatorSpec& spec) {
   spec.input<std::shared_ptr<DopplerData>>("dop_in");
   spec.output<std::shared_ptr<CFARData>>("dop_out");
-  spec.param(num_pulses,
-              "num_pulses",
-              "Number of pulses",
-              "Number of pulses per channel", {});
-  spec.param(num_channels,
-              "num_channels",
-              "Number of channels",
-              "Number of channels", {});
+  spec.param(num_samples, "num_samples", "Number of pulses", "Number of pulses per channel", {});
   spec.param(waveform_length,
               "waveform_length",
               "NWaveform length",
               "Length of waveform", {});
-  spec.param(num_samples,
-              "num_samples",
-              "Number of samples",
-              "Number of samples per channel", {});
+  spec.param(
+      num_subchannels, "num_subchannels", "Number of samples", "Number of samples per channel", {});
 }
 
 void DopplerOp::initialize() {
   HOLOSCAN_LOG_INFO("DopplerOp::initialize()");
   holoscan::Operator::initialize();
 
-  numCompressedSamples = num_samples.get() - waveform_length.get() + 1;
+  numCompressedSamples = num_subchannels.get() - waveform_length.get() + 1;
   HOLOSCAN_LOG_INFO("DopplerOp::initialize() done");
 }
 
@@ -249,14 +214,14 @@ void DopplerOp::compute(InputContext& op_input,
   HOLOSCAN_LOG_INFO("Doppler compute() called");
   auto dop_data = op_input.receive<std::shared_ptr<DopplerData>>("dop_in").value();
 
-  const index_t cpulses = num_pulses.get() - (dop_data->cancelMask.Size(0) - 1);
+  const index_t cpulses = num_samples.get() - (dop_data->cancelMask.Size(0) - 1);
 
-  auto xc = dop_data->tpcView.Slice({0, 0, 0},
-                                      {num_channels.get(), cpulses, numCompressedSamples});
-  auto xf = dop_data->tpcView.Permute({0, 2, 1});
+  auto xc = dop_data->tpcView.Slice({0, 0}, {cpulses, numCompressedSamples});
+  auto xf = dop_data->tpcView.Permute({1, 0});
 
-  (xc = xc * hamming<1>({num_channels.get(), num_pulses.get() - (dop_data->cancelMask.Size(0) - 1),
-                        numCompressedSamples})).run(dop_data->stream);
+  (xc = xc *
+        hamming<1>({num_samples.get() - (dop_data->cancelMask.Size(0) - 1), numCompressedSamples}))
+      .run(dop_data->stream);
   (xf = fft(xf)).run(dop_data->stream);
 
   auto params = std::make_shared<CFARData>(dop_data->tpcView, dop_data->stream);
@@ -266,25 +231,13 @@ void DopplerOp::compute(InputContext& op_input,
 // ----- CFAROp ---------------------------------------------------------------
 void CFAROp::setup(OperatorSpec& spec) {
   spec.input<std::shared_ptr<CFARData>>("cfar_in");
-  spec.param(num_transmits, "num_transmits",
-              "Number of waveform transmissions",
-              "Number of waveform transmissions to simulate", {});
-  spec.param(num_pulses,
-              "num_pulses",
-              "Number of pulses",
-              "Number of pulses per channel", {});
-  spec.param(num_channels,
-              "num_channels",
-              "Number of channels",
-              "Number of channels", {});
+  spec.param(num_samples, "num_samples", "Number of pulses", "Number of pulses per channel", {});
   spec.param(waveform_length,
               "waveform_length",
               "NWaveform length",
               "Length of waveform", {});
-  spec.param(num_samples,
-              "num_samples",
-              "Number of samples",
-              "Number of samples per channel", {});
+  spec.param(
+      num_subchannels, "num_subchannels", "Number of samples", "Number of samples per channel", {});
 }
 
 void CFAROp::initialize() {
@@ -293,19 +246,15 @@ void CFAROp::initialize() {
 
   transmits = 0;
 
-  num_pulses_rnd = 1;
-  while (num_pulses_rnd <= num_pulses.get()) {
-    num_pulses_rnd *= 2;
-  }
+  num_samples_rnd = 1;
+  while (num_samples_rnd <= num_samples.get()) { num_samples_rnd *= 2; }
 
-  numCompressedSamples = num_samples.get() - waveform_length.get() + 1;
+  numCompressedSamples = num_subchannels.get() - waveform_length.get() + 1;
 
-  make_tensor(normT, {num_channels.get(), num_pulses_rnd + cfarMaskY - 1,
-              numCompressedSamples + cfarMaskX - 1});
-  make_tensor(ba, {num_channels.get(), num_pulses_rnd + cfarMaskY - 1,
-              numCompressedSamples + cfarMaskX - 1});
-  make_tensor(dets, {num_channels.get(), num_pulses_rnd, numCompressedSamples});
-  make_tensor(xPow, {num_channels.get(), num_pulses_rnd, numCompressedSamples});
+  make_tensor(normT, {num_samples_rnd + cfarMaskY - 1, numCompressedSamples + cfarMaskX - 1});
+  make_tensor(ba, {num_samples_rnd + cfarMaskY - 1, numCompressedSamples + cfarMaskX - 1});
+  make_tensor(dets, {num_samples_rnd, numCompressedSamples});
+  make_tensor(xPow, {num_samples_rnd, numCompressedSamples});
   make_tensor(cfarMaskView, {cfarMaskY, cfarMaskX});
 
   // Mask for cfar detection
@@ -332,8 +281,10 @@ void CFAROp::initialize() {
                           {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}});
 
   // Pre-process CFAR convolution
-  (normT = conv2d(ones({num_channels.get(), num_pulses_rnd, numCompressedSamples}), cfarMaskView,
-           matxConvCorrMode_t::MATX_C_MODE_FULL)).run();
+  (normT = conv2d(ones({num_samples_rnd, numCompressedSamples}),
+                  cfarMaskView,
+                  matxConvCorrMode_t::MATX_C_MODE_FULL))
+      .run();
 
   ba.PrefetchDevice(0);
   normT.PrefetchDevice(0);
@@ -395,13 +346,12 @@ void CFAROp::compute(InputContext& op_input,
   // This can be done with a convolution of the cfarMask with
   // ones.
   // norm = conv2(ones(size(X)), mask, 'same');
-  auto normTrim = normT.Slice({0, cfarMaskY / 2, cfarMaskX / 2},
-                              {num_channels.get(), num_pulses_rnd + cfarMaskY / 2,
-                               numCompressedSamples + cfarMaskX / 2});
+  auto normTrim =
+      normT.Slice({cfarMaskY / 2, cfarMaskX / 2},
+                  {num_samples_rnd + cfarMaskY / 2, numCompressedSamples + cfarMaskX / 2});
 
-  auto baTrim = ba.Slice({0, cfarMaskY / 2, cfarMaskX / 2},
-                         {num_channels.get(), num_pulses_rnd + cfarMaskY / 2,
-                          numCompressedSamples + cfarMaskX / 2});
+  auto baTrim = ba.Slice({cfarMaskY / 2, cfarMaskX / 2},
+                         {num_samples_rnd + cfarMaskY / 2, numCompressedSamples + cfarMaskX / 2});
   (baTrim = baTrim / normTrim).run(cfar_data->stream);
 
   // The scalar alpha is used as a multiplier on the background averages
@@ -418,13 +368,6 @@ void CFAROp::compute(InputContext& op_input,
   // These 2 branches are functionally equivalent.  A custom op is more
   // efficient as it can avoid repeated loads.
   calcDets(dets, xPow, baTrim, normTrim, pfa).run(cfar_data->stream);
-
-  // Interrupt if we're done
-  transmits++;
-  if (transmits == num_transmits.get()) {
-    HOLOSCAN_LOG_INFO("Received {} of {} transmits, exiting...", transmits, num_transmits.get());
-    GxfGraphInterrupt(context.context());
-  }
 }
 
 }  // namespace holoscan::ops

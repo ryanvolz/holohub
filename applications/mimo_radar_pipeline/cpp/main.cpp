@@ -30,10 +30,8 @@ class App : public holoscan::Application {
     HOLOSCAN_LOG_INFO("Initializing radar pipeline as data processor");
 
     // Radar algorithms
-    auto pc   = make_operator<ops::PulseCompressionOp>(
-      "pulse_compression",
-      from_config("radar_pipeline"),
-      make_condition<CountCondition>(from_config("radar_pipeline.num_transmits").as<size_t>()));
+    auto pc =
+        make_operator<ops::PulseCompressionOp>("pulse_compression", from_config("radar_pipeline"));
     auto tpc  = make_operator<ops::ThreePulseCancellerOp>(
       "three_pulse_canceller",
       from_config("radar_pipeline"));

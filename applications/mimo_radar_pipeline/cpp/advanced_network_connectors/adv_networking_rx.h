@@ -147,9 +147,9 @@ class AdvConnectorOpRx : public Operator {
 
   // Radar settings
   Parameter<uint16_t> buffer_size_;
-  Parameter<uint16_t> num_channels_;
-  Parameter<uint16_t> num_pulses_;
+  Parameter<uint16_t> num_cycles_;
   Parameter<uint16_t> num_samples_;
+  Parameter<uint16_t> num_subchannels_;
 
   // Networking settings
   Parameter<bool> hds_;                  // Header-data split enabled
@@ -187,8 +187,6 @@ class AdvConnectorOpRx : public Operator {
   uint16_t nom_payload_size_;            // Nominal payload size (no headers)
 
   size_t samples_per_arr;
-  uint16_t pkts_per_pulse;
-  uint16_t max_waveform_id;
   AdvBufferTracking buffer_track;
   tensor_t<sample_t, 4> rf_data;
   cudaStream_t proc_stream;

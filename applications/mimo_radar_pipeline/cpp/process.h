@@ -107,15 +107,14 @@ class PulseCompressionOp : public Operator {
   void compute(InputContext& op_input, OutputContext& op_output, ExecutionContext&) override;
 
  private:
-  Parameter<int64_t> num_pulses;
   Parameter<int64_t> num_samples;
+  Parameter<int64_t> num_subchannels;
   Parameter<int64_t> waveform_length;
-  Parameter<int64_t> num_channels;
-  index_t num_samples_rnd;
+  index_t num_subchannels_rnd;
 
   tensor_t<complex_t, 1> waveformView;
   tensor_t<complex_t, 0> norms;
-  tensor_t<complex_t, 3> zeroPaddedInput;
+  tensor_t<complex_t, 2> zeroPaddedInput;
 };  // PulseCompressionOp
 
 class ThreePulseCancellerOp : public Operator {
@@ -147,15 +146,14 @@ class ThreePulseCancellerOp : public Operator {
   void compute(InputContext& op_input, OutputContext& op_output, ExecutionContext&) override;
 
  private:
-  Parameter<int64_t> num_pulses;
   Parameter<int64_t> num_samples;
+  Parameter<int64_t> num_subchannels;
   Parameter<int64_t> waveform_length;
-  Parameter<int64_t> num_channels;
   index_t numCompressedSamples;
-  index_t num_pulses_rnd;
+  index_t num_samples_rnd;
 
   tensor_t<float_t, 1> cancelMask;
-  tensor_t<complex_t, 3> tpcView;
+  tensor_t<complex_t, 2> tpcView;
 };  // ThreePulseCancellerOp
 
 class DopplerOp : public Operator {
@@ -184,10 +182,9 @@ class DopplerOp : public Operator {
   void compute(InputContext& op_input, OutputContext& op_output, ExecutionContext&) override;
 
  private:
-  Parameter<int64_t> num_pulses;
   Parameter<int64_t> num_samples;
+  Parameter<int64_t> num_subchannels;
   Parameter<int64_t> waveform_length;
-  Parameter<int64_t> num_channels;
   index_t numCompressedSamples;
 };  // DopplerOp
 
@@ -238,22 +235,20 @@ class CFAROp : public Operator {
   void compute(InputContext& op_input, OutputContext&, ExecutionContext&) override;
 
  private:
-  Parameter<uint16_t> num_transmits;
-  Parameter<int64_t> num_pulses;
   Parameter<int64_t> num_samples;
+  Parameter<int64_t> num_subchannels;
   Parameter<int64_t> waveform_length;
-  Parameter<int64_t> num_channels;
   index_t numCompressedSamples;
-  index_t num_pulses_rnd;
+  index_t num_samples_rnd;
   const index_t cfarMaskX = 13;
   const index_t cfarMaskY = 5;
   static const constexpr float pfa = 1e-5f;
   size_t transmits;
 
-  tensor_t<float_t, 3> normT;
-  tensor_t<float_t, 3> ba;
-  tensor_t<int, 3> dets;
-  tensor_t<float_t, 3> xPow;
+  tensor_t<float_t, 2> normT;
+  tensor_t<float_t, 2> ba;
+  tensor_t<int, 2> dets;
+  tensor_t<float_t, 2> xPow;
   tensor_t<float_t, 2> cfarMaskView;
 };  // CFAROp
 

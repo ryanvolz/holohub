@@ -28,17 +28,8 @@ scheduler:
 rx_params:
   use_ano: true
   split_boundary: true
-  batch_size: 5120
+  batch_size: 5120  # Number of packets to process at once into tensor data
   max_packet_size: 9000
-
-basic_network:
-  batch_size: 100            # RX message batch size
-  max_payload_size: 8208     # Max bytes of single packet (stride)
-  dst_port: 60000            # Destination port
-  l4_proto: "udp"            # Protocol ('udp' or "tcp")
-  ip_addr: "10.17.16.10"     # Destination IP address
-  min_ipg_ns: 0              # Minimum inter-packet gap (nano-seconds)
-  retry_connect: 1
 
 advanced_network:
   cfg:
@@ -60,7 +51,7 @@ advanced_network:
             id: 1
             gpu_device: 0
             gpu_direct: true
-            split_boundary: 42
+            header_size: 42
             cpu_cores: "5"
             max_packet_size: 9000       # Maximum payload size
             num_concurrent_batches: 15  # Number of batches that can be used at any time
@@ -76,10 +67,8 @@ advanced_network:
               udp_dst: 60000
 
 radar_pipeline:
-  is_source: false         # Defines app type (source, process)
-  num_transmits: 1000      # Use N-1 of num_transmits in source
-  num_pulses: 128
-  num_samples: 9000
-  num_channels: 16
-  waveform_length: 1000
-  buffer_size: 10          # Number of RF arrays to store in rx buffer
+  num_cycles: 100           # Number of cycles of num_samples to group together into an RF Array
+  num_samples: 1000         # Number of samples to group together in a cycle (e.g. waveform repeats)
+  num_subchannels: 8        # Number of subchannels for each time sample before moving to next time
+  waveform_length: 1000     # Used in processing
+  buffer_size: 100          # Number of RF arrays to store in rx buffer

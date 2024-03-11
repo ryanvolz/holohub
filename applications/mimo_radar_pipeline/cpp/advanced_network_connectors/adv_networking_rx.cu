@@ -23,103 +23,91 @@
  * metadata accordingly. This functionalitycan be useful when testing, where we
  * have a packet generator that isn't generating packets that use our data format.
  */
-__device__ __forceinline__
-void gen_meta_from_pkt_cnt(RfMetaData *meta,
-                           const uint64_t pkt_cnt,
-                           const uint16_t num_channels,
-                           const uint16_t num_pulses,
-                           const uint16_t num_samples,
-                           const uint16_t pkts_per_pulse,
-                           const uint16_t max_waveform_id) {
-  const uint64_t pkts_per_channel  = pkts_per_pulse * num_pulses;
-  const uint64_t pkts_per_transmit = pkts_per_channel * num_channels;
-  meta->waveform_id = static_cast<uint16_t>((pkt_cnt / pkts_per_transmit) % max_waveform_id);
-  meta->channel_idx = static_cast<uint16_t>((pkt_cnt % pkts_per_transmit) / pkts_per_channel);
-  meta->pulse_idx   = static_cast<uint16_t>((pkt_cnt % pkts_per_channel) / pkts_per_pulse);
-  meta->sample_idx  = static_cast<uint16_t>(SPOOF_SAMPLES_PER_PKT * (pkt_cnt % pkts_per_pulse));
-  meta->pkt_samples = min(num_samples - meta->sample_idx, SPOOF_SAMPLES_PER_PKT);
-  meta->end_array   = (pkt_cnt + 1) % pkts_per_transmit == 0;
+__device__ __forceinline__ void gen_meta_from_pkt_cnt(RfMetaData* meta, const uint64_t pkt_cnt,
+                                                      const uint16_t num_samples,
+                                                      const uint16_t num_subchannels) {
+  meta->sample_idx = static_cast<uint16_t>(SPOOF_SAMPLES_PER_PKT * pkt_cnt);
+  meta->channel_idx = 0;
+  meta->pkt_samples = SPOOF_SAMPLES_PER_PKT;
 }
 #endif
 
 __global__ void place_packet_data_kernel(sample_t* out, const void* const* const __restrict__ in,
                                          int* sample_cnt, bool* received_end,
                                          const size_t buffer_pos, const uint16_t pkt_len,
-                                         const uint16_t buffer_size, const uint16_t num_channels,
-                                         const uint16_t num_pulses, const uint16_t num_samples,
-                                         const uint64_t total_pkts, const uint16_t pkts_per_pulse,
-                                         const uint16_t max_waveform_id) {
-  const uint32_t channel_stride = static_cast<uint32_t>(num_samples) * num_pulses;
-  const uint32_t buffer_stride  = num_channels * channel_stride;
+                                         const uint16_t buffer_size, const uint16_t num_cycles,
+                                         const uint16_t num_samples, const uint16_t num_subchannels,
+                                         const uint64_t total_pkts) {
+  const uint32_t sample_stride = static_cast<uint32_t>(num_subchannels);
+  const uint32_t group_stride = sample_stride * num_samples;
+  const uint32_t cycle_stride = group_stride * num_cycles;
   const uint32_t pkt_idx = blockIdx.x;
 
 #if SPOOF_PACKET_DATA
   // Generate fake packet meta-data from the packet count
   RfMetaData meta_obj;
   RfMetaData *meta = &meta_obj;
-  gen_meta_from_pkt_cnt(meta,
-                        total_pkts + pkt_idx,
-                        num_channels,
-                        num_pulses,
-                        num_samples,
-                        pkts_per_pulse,
-                        max_waveform_id);
+  gen_meta_from_pkt_cnt(meta, total_pkts + pkt_idx, num_samples, num_subchannels);
   const sample_t* samples = reinterpret_cast<const sample_t*>(in[pkt_idx]);
 #else
   const RfMetaData *meta   = reinterpret_cast<const RfMetaData *>(in[pkt_idx]);
   const sample_t* samples = reinterpret_cast<const sample_t*>(meta + 1);
 #endif
 
-  // Make sure this isn't wrapping the buffer - drop if it is
-  if (meta->waveform_id >= buffer_pos + buffer_size ||
-      meta->waveform_id < buffer_pos) {
-    return;
-  }
+  uint64_t sample_idx = meta->sample_idx;
 
-  const uint16_t buffer_idx = meta->waveform_id % buffer_size;
-  if (meta->end_array && threadIdx.x == 0) {
-    received_end[buffer_idx] = true;
-  }
+  while (sample_idx < meta->sample_idx + meta->pkt_samples) {
+    // break sample index down into (buffer, group, sample) index
+    const uint64_t group_idx = sample_idx / num_samples;
+    const uint16_t group_sample_idx = sample_idx % num_samples;
+    const uint64_t cycle_idx = group_idx / num_cycles;
+    const uint16_t cycle_group_idx = group_idx % num_cycles;
+    const uint16_t buffer_idx = cycle_idx % buffer_size;
 
-  // Compute pointer in buffer memory
-  const uint32_t idx_offset = meta->sample_idx
-                            + meta->pulse_idx   * num_samples
-                            + meta->channel_idx * channel_stride
-                            + buffer_idx        * buffer_stride;
+    const uint32_t samples_before_cycle_wrap =
+        (num_cycles - cycle_group_idx) * num_samples - group_sample_idx;
+    const uint32_t samples_to_write = min(meta->pkt_samples, samples_before_cycle_wrap);
 
-  // Copy data
-  for (uint16_t i = threadIdx.x; i < meta->pkt_samples; i += blockDim.x) {
-    out[idx_offset + i] = samples[i];
-  }
+    // Compute pointer in buffer memory
+    const uint32_t idx_offset = group_sample_idx * sample_stride + cycle_group_idx * group_stride +
+                                buffer_idx * cycle_stride;
 
-  if (threadIdx.x == 0) {
-    // todo Smarter way than atomicAdd
-    atomicAdd(&sample_cnt[buffer_idx], meta->pkt_samples);
+    // Copy data
+    for (uint16_t i = threadIdx.x; i < samples_to_write * num_subchannels; i += blockDim.x) {
+      out[idx_offset + i] = samples[i];
+    }
+
+    if (threadIdx.x == 0) {
+      // todo Smarter way than atomicAdd
+      atomicAdd(&sample_cnt[buffer_idx], samples_to_write * num_subchannels);
+
+      if (sample_cnt[buffer_idx] >= num_subchannels * num_samples * num_cycles) {
+        received_end[buffer_idx] = true;
+      }
+    }
+
+    sample_idx += samples_to_write;
   }
 }
 
 void place_packet_data(sample_t* out, const void* const* const in, int* sample_cnt,
                        bool* received_end, const size_t buffer_pos, const uint16_t pkt_len,
                        const uint32_t num_pkts, const uint16_t buffer_size,
-                       const uint16_t num_channels, const uint16_t num_pulses,
-                       const uint16_t num_samples, const uint64_t total_pkts,
-                       const uint16_t pkts_per_pulse, const uint16_t max_waveform_id,
+                       const uint16_t num_cycles, const uint16_t num_samples,
+                       const uint16_t num_subchannels, const uint64_t total_pkts,
                        cudaStream_t stream) {
   // Each thread processes an individual packet
-  place_packet_data_kernel<<<num_pkts, 128, buffer_size*sizeof(int), stream>>>(
-    out,
-    in,
-    sample_cnt,
-    received_end,
-    buffer_pos,
-    pkt_len,
-    buffer_size,
-    num_channels,
-    num_pulses,
-    num_samples,
-    total_pkts,
-    pkts_per_pulse,
-    max_waveform_id);
+  place_packet_data_kernel<<<num_pkts, 128, buffer_size * sizeof(int), stream>>>(out,
+                                                                                 in,
+                                                                                 sample_cnt,
+                                                                                 received_end,
+                                                                                 buffer_pos,
+                                                                                 pkt_len,
+                                                                                 buffer_size,
+                                                                                 num_cycles,
+                                                                                 num_samples,
+                                                                                 num_subchannels,
+                                                                                 total_pkts);
 }
 
 namespace holoscan::ops {
@@ -130,21 +118,25 @@ void AdvConnectorOpRx::setup(OperatorSpec& spec) {
 
   // Radar settings
   spec.param<uint16_t>(buffer_size_,
-    "buffer_size",
-    "Size of RF buffer",
-    "Max number of transmits that can be held at once", {});
-  spec.param<uint16_t>(num_channels_,
-    "num_channels",
-    "Number of channels",
-    "Number of channels", {});
-  spec.param<uint16_t>(num_pulses_,
-    "num_pulses",
-    "Number of pulses",
-    "Number of pulses per channel", {});
+                       "buffer_size",
+                       "Size of RF buffer",
+                       "Max number of num_cycles batches that can be held at once",
+                       {});
+  spec.param<uint16_t>(num_cycles_,
+                       "num_cycles",
+                       "Number of cycles",
+                       "Number of cycles of num_samples to group in processing",
+                       {});
   spec.param<uint16_t>(num_samples_,
-    "num_samples",
-    "Number of samples",
-    "Number of samples per pulse", {});
+                       "num_samples",
+                       "Number of samples",
+                       "Number of samples per cycle to group in processing",
+                       {});
+  spec.param<uint16_t>(num_subchannels_,
+                       "num_subchannels",
+                       "Number of subchannels",
+                       "Number of IQ subchannels per sample time instance",
+                       {});
 
   // Networking settings
   spec.param<bool>(hds_,
@@ -179,7 +171,7 @@ void AdvConnectorOpRx::initialize() {
   nom_payload_size_ = max_packet_size_.get() - header_size_.get();
 
   // Total number of I/Q samples per array
-  samples_per_arr = num_channels_.get() * num_pulses_.get() * num_samples_.get();
+  samples_per_arr = num_cycles_.get() * num_samples_.get() * num_subchannels_.get();
 
   // Configuration checks
   if (!(hds_.get() && gpu_direct_.get())) {
@@ -197,8 +189,9 @@ void AdvConnectorOpRx::initialize() {
     }
 
     buffer_track = AdvBufferTracking(buffer_size_.get());
-    make_tensor(rf_data,
-      {buffer_size_.get(), num_channels_.get(), num_pulses_.get(), num_samples_.get()});
+    make_tensor(
+        rf_data,
+        {buffer_size_.get(), num_cycles_.get(), num_samples_.get(), num_subchannels_.get()});
 
     cudaStreamCreate(&streams_[n]);
     cudaEventCreate(&events_[n]);
@@ -206,21 +199,14 @@ void AdvConnectorOpRx::initialize() {
 
 #if SPOOF_PACKET_DATA
   // Compute packets delivered per pulse and max waveform ID based on parameters
-  const size_t spoof_pkt_size = sizeof(sample_t) * SPOOF_SAMPLES_PER_PKT + RFPacket::header_size();
-  pkts_per_pulse  = static_cast<uint16_t>(packets_per_pulse(spoof_pkt_size, num_samples_.get()));
-  max_waveform_id = static_cast<uint16_t>(
-    buffer_size_.get() * (65535 / buffer_size_.get()));  // Max of uint16_t
-  HOLOSCAN_LOG_WARN("Spoofing packet metadata, ignoring packet header. Pkts / pulse: {}",
-    pkts_per_pulse);
+  const size_t spoof_pkt_size =
+      sizeof(sample_t) * num_subchannels_.get() * SPOOF_SAMPLES_PER_PKT + sizeof(RfMetaData);
+  HOLOSCAN_LOG_WARN("Spoofing packet metadata, ignoring packet header.");
   if (spoof_pkt_size >= max_packet_size_.get()) {
     HOLOSCAN_LOG_ERROR("Max packets size ({}) can't fit the expected samples ({})",
       max_packet_size_.get(), SPOOF_SAMPLES_PER_PKT);
     exit(1);
   }
-#else
-  // These are only used when spoofing packet metadata
-  pkts_per_pulse  = 0;
-  max_waveform_id = 0;
 #endif
 
   HOLOSCAN_LOG_INFO("AdvConnectorOpRx::initialize() complete");
@@ -262,25 +248,24 @@ void AdvConnectorOpRx::free_bufs_and_emit_arrays(OutputContext& op_output) {
     }
 
     // Received End-of-Array (EOA) message, emit to downstream operators
-    auto params = std::make_shared<RFArray>(
-      rf_data.Slice<3>(
-        {static_cast<index_t>(pos_wrap), 0, 0, 0},
-        {matxDropDim, matxEnd, matxEnd, matxEnd}),
-      0, proc_stream);
+    auto params =
+        std::make_shared<RFArray>(rf_data.Slice<3>({static_cast<index_t>(pos_wrap), 0, 0, 0},
+                                                   {matxDropDim, matxEnd, matxEnd, matxEnd}),
+                                  0,
+                                  0,
+                                  proc_stream);
 
     op_output.emit(params, "rf_out");
-    HOLOSCAN_LOG_INFO("Emitting {} with {}/{} samples",
-      buffer_track.pos + i,
-      buffer_track.sample_cnt_h[pos_wrap],
-      samples_per_arr);
+    HOLOSCAN_LOG_INFO("Emitting sample cycle {} with {}/{} IQ samples",
+                      buffer_track.pos + i,
+                      buffer_track.sample_cnt_h[pos_wrap],
+                      samples_per_arr);
 
     // Increment the tracker 'i' number of times. This allows us to not get hung on arrays
     // where the EOA was either dropped or missed. Ex: if the EOA for array 11 was dropped,
     // we will emit array 12 when its EOA arrives, incrementing from 10 -> 12.
-    for (size_t j = 0; j <= i; j++) {
-      buffer_track.increment();
-      HOLOSCAN_LOG_INFO("Next waveform expected: {}", buffer_track.pos);
-    }
+    for (size_t j = 0; j <= i; j++) { buffer_track.increment(); }
+    HOLOSCAN_LOG_INFO("Next sample cycle expected: {}", buffer_track.pos);
 
     buffer_track.transfer(cudaMemcpyHostToDevice, stream);
     cudaStreamSynchronize(stream);
@@ -343,12 +328,10 @@ void AdvConnectorOpRx::compute(InputContext& op_input,
                         nom_payload_size_,
                         aggr_pkts_recv_,
                         buffer_size_.get(),
-                        num_channels_.get(),
-                        num_pulses_.get(),
+                        num_cycles_.get(),
                         num_samples_.get(),
-                        ttl_pkts_recv_,   // only needed if spoofing packets
-                        pkts_per_pulse,   // only needed if spoofing packets
-                        max_waveform_id,  // only needed if spoofing packets
+                        num_subchannels_.get(),
+                        ttl_pkts_recv_,  // only needed if spoofing packets
                         streams_[cur_idx]);
 
       cudaEventRecord(events_[cur_idx], streams_[cur_idx]);

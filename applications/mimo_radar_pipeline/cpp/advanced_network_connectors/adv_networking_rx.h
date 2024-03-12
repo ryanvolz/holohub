@@ -28,7 +28,7 @@
 // can be useful when testing, where we have a packet generator that isn't
 // transmitting data that isn't generating packets that use our data format.
 #define SPOOF_PACKET_DATA      false
-#define SPOOF_SAMPLES_PER_PKT  1024  // byte count must be less than 'max_packet_size' config
+#define SPOOF_SAMPLES_PER_PKT 128  // byte count must be less than 'max_packet_size' config
 
 // Example IPV4 UDP packet using Linux headers
 struct UDPIPV4Pkt {
@@ -152,11 +152,10 @@ class AdvConnectorOpRx : public Operator {
   Parameter<uint16_t> num_subchannels_;
 
   // Networking settings
-  Parameter<bool> hds_;                  // Header-data split enabled
+  Parameter<bool> use_hds_;              // Header-data split enabled
   Parameter<bool> gpu_direct_;           // GPUDirect enabled
   Parameter<uint32_t> batch_size_;       // Batch size for one processing block
   Parameter<uint16_t> max_packet_size_;  // Maximum size of a single packet
-  Parameter<uint16_t> header_size_;      // Header size of packet
 
   // Holds burst buffers that cannot be freed yet
   struct RxMsg {

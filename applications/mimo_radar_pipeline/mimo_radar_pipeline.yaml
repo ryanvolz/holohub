@@ -26,8 +26,6 @@ scheduler:
   stop_on_deadlock_timeout: 500
 
 rx_params:
-  use_ano: true
-  split_boundary: true
   batch_size: 5120  # Number of packets to process at once into tensor data
   max_packet_size: 9000
 
@@ -51,7 +49,7 @@ advanced_network:
             id: 1
             gpu_device: 0
             gpu_direct: true
-            header_size: 42
+            split_boundary: 42
             cpu_cores: "5"
             max_packet_size: 9000       # Maximum payload size
             num_concurrent_batches: 15  # Number of batches that can be used at any time
@@ -70,5 +68,4 @@ radar_pipeline:
   num_cycles: 100           # Number of cycles of num_samples to group together into an RF Array
   num_samples: 1000         # Number of samples to group together in a cycle (e.g. waveform repeats)
   num_subchannels: 8        # Number of subchannels for each time sample before moving to next time
-  waveform_length: 1000     # Used in processing
   buffer_size: 100          # Number of RF arrays to store in rx buffer

@@ -34,9 +34,9 @@ __device__ __forceinline__ void gen_meta_from_pkt_cnt(RfMetaData* meta, const ui
 
 __global__ void place_packet_data_kernel(sample_t* out, const void* const* const __restrict__ in,
                                          int* sample_cnt, bool* received_end,
-                                         const size_t buffer_pos, const uint16_t pkt_len,
-                                         const uint16_t buffer_size, const uint16_t num_cycles,
-                                         const uint16_t num_samples, const uint16_t num_subchannels,
+                                         const size_t buffer_pos, const uint16_t buffer_size,
+                                         const uint16_t num_cycles, const uint16_t num_samples,
+                                         const uint16_t num_subchannels,
                                          const uint64_t total_pkts) {
   const uint32_t sample_stride = static_cast<uint32_t>(num_subchannels);
   const uint32_t group_stride = sample_stride * num_samples;
@@ -91,18 +91,16 @@ __global__ void place_packet_data_kernel(sample_t* out, const void* const* const
 }
 
 void place_packet_data(sample_t* out, const void* const* const in, int* sample_cnt,
-                       bool* received_end, const size_t buffer_pos, const uint16_t pkt_len,
-                       const uint32_t num_pkts, const uint16_t buffer_size,
-                       const uint16_t num_cycles, const uint16_t num_samples,
-                       const uint16_t num_subchannels, const uint64_t total_pkts,
-                       cudaStream_t stream) {
+                       bool* received_end, const size_t buffer_pos, const uint32_t num_pkts,
+                       const uint16_t buffer_size, const uint16_t num_cycles,
+                       const uint16_t num_samples, const uint16_t num_subchannels,
+                       const uint64_t total_pkts, cudaStream_t stream) {
   // Each thread processes an individual packet
   place_packet_data_kernel<<<num_pkts, 128, buffer_size * sizeof(int), stream>>>(out,
                                                                                  in,
                                                                                  sample_cnt,
                                                                                  received_end,
                                                                                  buffer_pos,
-                                                                                 pkt_len,
                                                                                  buffer_size,
                                                                                  num_cycles,
                                                                                  num_samples,
@@ -139,26 +137,26 @@ void AdvConnectorOpRx::setup(OperatorSpec& spec) {
                        {});
 
   // Networking settings
-  spec.param<bool>(hds_,
-    "split_boundary",
-    "Header-data split boundary",
-    "Byte boundary where header and data is split", true);
+  spec.param<bool>(use_hds_,
+                   "use_header_data_split",
+                   "Use header-data split",
+                   "Header-data split is enabled for incoming packets",
+                   true);
   spec.param<bool>(gpu_direct_,
-    "gpu_direct",
-    "GPUDirect enabled",
-    "GPUDirect is enabled for incoming packets", true);
+                   "gpu_direct",
+                   "GPUDirect enabled",
+                   "GPUDirect is enabled for incoming packets",
+                   true);
   spec.param<uint32_t>(batch_size_,
-    "batch_size",
-    "Batch size",
-    "Batch size in packets for each processing epoch", 1000);
+                       "batch_size",
+                       "Batch size",
+                       "Batch size in packets for each processing epoch",
+                       1000);
   spec.param<uint16_t>(max_packet_size_,
-    "max_packet_size",
-    "Max packet size",
-    "Maximum packet size expected from sender", 9100);
-  spec.param<uint16_t>(header_size_,
-    "header_size",
-    "Header size",
-    "Header size on each packet from L4 and below", 42);
+                       "max_packet_size",
+                       "Max packet size",
+                       "Maximum packet size expected from sender",
+                       9000);
 }
 
 void AdvConnectorOpRx::initialize() {
@@ -167,17 +165,14 @@ void AdvConnectorOpRx::initialize() {
 
   cudaStreamCreate(&proc_stream);
 
-  // Assume all packets are the same size, specified in the config
-  nom_payload_size_ = max_packet_size_.get() - header_size_.get();
-
   // Total number of I/Q samples per array
   samples_per_arr = num_cycles_.get() * num_samples_.get() * num_subchannels_.get();
 
   // Configuration checks
-  if (!(hds_.get() && gpu_direct_.get())) {
+  if (!(use_hds_.get() && gpu_direct_.get())) {
     HOLOSCAN_LOG_ERROR("Only configured to run with Header-Data Split and GPUDirect");
     exit(1);
-  } else if (hds_.get() && !gpu_direct_.get()) {
+  } else if (use_hds_.get() && !gpu_direct_.get()) {
     HOLOSCAN_LOG_ERROR("If Header-Data Split mode is enabled, GPUDirect needs to be too");
     exit(1);
   }
@@ -296,7 +291,7 @@ void AdvConnectorOpRx::compute(InputContext& op_input,
   // Header data split saves off the GPU pointers into a host-pinned buffer to reassemble later.
   // Once enough packets are aggregated, a reorder kernel is launched. In CPU-only mode the
   // entire burst buffer pointer is saved and freed once an entire batch is received.
-  if (gpu_direct_.get() && hds_.get()) {
+  if (gpu_direct_.get() && use_hds_.get()) {
     for (int p = 0; p < adv_net_get_num_pkts(burst); p++) {
       h_dev_ptrs_[cur_idx][aggr_pkts_recv_ + p] = adv_net_get_gpu_pkt_ptr(burst, p);
       ttl_bytes_in_cur_batch_ += adv_net_get_gpu_pkt_len(burst, p)
@@ -325,7 +320,6 @@ void AdvConnectorOpRx::compute(InputContext& op_input,
                         buffer_track.sample_cnt_d,
                         buffer_track.received_end_d,
                         buffer_track.pos,
-                        nom_payload_size_,
                         aggr_pkts_recv_,
                         buffer_size_.get(),
                         num_cycles_.get(),
@@ -344,7 +338,8 @@ void AdvConnectorOpRx::compute(InputContext& op_input,
 
       if (cudaGetLastError() != cudaSuccess)  {
         HOLOSCAN_LOG_ERROR("CUDA error with {} packets in batch and {} bytes total",
-                batch_size_.get(), batch_size_.get()*nom_payload_size_);
+                           batch_size_.get(),
+                           batch_size_.get() * max_packet_size_.get());
         exit(1);
       }
     } else {

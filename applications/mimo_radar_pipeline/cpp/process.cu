@@ -74,7 +74,7 @@ void ComplexIntToFloatOp::compute(InputContext& op_input, OutputContext& op_outp
 
   auto params =
       std::make_shared<ComplexRFArray>(complex_data, in->sample_idx, in->channel_idx, stream);
-  op_output.emit(params, "pc_out");
+  op_output.emit(params, "rf_out");
 }
 
 }  // namespace holoscan::ops

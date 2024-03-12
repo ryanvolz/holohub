@@ -15,6 +15,8 @@
  * limitations under the License.
  */
 
+#include <holoscan/operators/ping_rx/ping_rx.hpp>
+
 #include "advanced_network_connectors/adv_networking_rx.h"
 #include "common.h"
 #include "holoscan/holoscan.hpp"
@@ -29,14 +31,11 @@ class App : public holoscan::Application {
     using namespace holoscan;
     HOLOSCAN_LOG_INFO("Initializing radar pipeline as data processor");
 
+    auto rx = make_operator<ops::PingRxOp>("rx");
+
     // Radar algorithms
-    auto pc =
-        make_operator<ops::PulseCompressionOp>("pulse_compression", from_config("radar_pipeline"));
-    auto tpc  = make_operator<ops::ThreePulseCancellerOp>(
-      "three_pulse_canceller",
-      from_config("radar_pipeline"));
-    auto dop  = make_operator<ops::DopplerOp>("doppler", from_config("radar_pipeline"));
-    auto cfar = make_operator<ops::CFAROp>("cfar", from_config("radar_pipeline"));
+    auto converter =
+        make_operator<ops::ComplexIntToFloatOp>("converter", from_config("radar_pipeline"));
 
     // Network operators
     // Advanced
@@ -46,12 +45,10 @@ class App : public holoscan::Application {
                                            make_condition<BooleanCondition>("is_alive", true));
     auto adv_rx_pkt = make_operator<ops::AdvConnectorOpRx>(
         "bench_rx", from_config("rx_params"), from_config("radar_pipeline"));
-    add_flow(adv_net_rx, adv_rx_pkt, {{"bench_rx_out", "burst_in"}});
-    add_flow(adv_rx_pkt, pc, {{"rf_out", "rf_in"}});
 
-    add_flow(pc, tpc,   {{"pc_out", "tpc_in"}});
-    add_flow(tpc, dop,  {{"tpc_out", "dop_in"}});
-    add_flow(dop, cfar, {{"dop_out", "cfar_in"}});
+    add_flow(adv_net_rx, adv_rx_pkt, {{"bench_rx_out", "burst_in"}});
+    add_flow(adv_rx_pkt, converter, {{"rf_out", "rf_in"}});
+    add_flow(converter, rx);
   }
 
  public:

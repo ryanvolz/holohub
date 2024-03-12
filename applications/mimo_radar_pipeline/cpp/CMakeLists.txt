@@ -45,6 +45,7 @@ target_link_libraries(mimo_radar_pipeline
   matx::matx
   holoscan::core
   holoscan::advanced_network_rx
+  holoscan::ops::ping_rx
   advanced_network_connector_rx
 )
 

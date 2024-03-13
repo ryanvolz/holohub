@@ -34,8 +34,10 @@ class App : public holoscan::Application {
     auto rx = make_operator<ops::PingRxOp>("rx");
 
     // Radar algorithms
-    auto converter =
-        make_operator<ops::ComplexIntToFloatOp>("converter", from_config("radar_pipeline"));
+    auto converter0 =
+        make_operator<ops::ComplexIntToFloatOp>("converter0", from_config("radar_pipeline"));
+    auto converter1 =
+        make_operator<ops::ComplexIntToFloatOp>("converter1", from_config("radar_pipeline"));
 
     // Network operators
     // Advanced
@@ -43,12 +45,18 @@ class App : public holoscan::Application {
         make_operator<ops::AdvNetworkOpRx>("adv_network_rx",
                                            from_config("advanced_network"),
                                            make_condition<BooleanCondition>("is_alive", true));
-    auto adv_rx_pkt = make_operator<ops::AdvConnectorOpRx>(
-        "bench_rx", from_config("rx_params"), from_config("radar_pipeline"));
+    auto adv_rx_pkt0 = make_operator<ops::AdvConnectorOpRx>(
+        "adv_connector_rx0", from_config("rx_params"), from_config("radar_pipeline"));
+    auto adv_rx_pkt1 = make_operator<ops::AdvConnectorOpRx>(
+        "adv_connector_rx1", from_config("rx_params"), from_config("radar_pipeline"));
 
-    add_flow(adv_net_rx, adv_rx_pkt, {{"bench_rx_out", "burst_in"}});
-    add_flow(adv_rx_pkt, converter, {{"rf_out", "rf_in"}});
-    add_flow(converter, rx);
+    add_flow(adv_net_rx, adv_rx_pkt0, {{"ch0", "burst_in"}});
+    add_flow(adv_rx_pkt0, converter0, {{"rf_out", "rf_in"}});
+    add_flow(converter0, rx);
+
+    add_flow(adv_net_rx, adv_rx_pkt1, {{"ch1", "burst_in"}});
+    add_flow(adv_rx_pkt1, converter1, {{"rf_out", "rf_in"}});
+    add_flow(converter1, rx);
   }
 
  public:

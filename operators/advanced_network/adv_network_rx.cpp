@@ -28,7 +28,21 @@ struct AdvNetworkOpRx::AdvNetworkOpRxImpl {
 
 
 void AdvNetworkOpRx::setup(OperatorSpec& spec) {
-  spec.output<std::shared_ptr<AdvNetBurstParams>>("bench_rx_out");
+  // Want to pull output port names from the configuration, but it is not initialized yet.
+  // So do some argument parsing to get the config so we can use it here
+  AdvNetConfigYaml cfg;
+  for (auto& arg : args()) {
+    if (arg.name() == "cfg") {
+      auto node = std::any_cast<YAML::Node>(arg.value());
+      cfg = node.as<AdvNetConfigYaml>();
+    }
+  }
+  // Now actually set the output port names based on the given configuration.
+  for (const auto& rx : cfg.rx_) {
+    for (const auto& q : rx.queues_) {
+      spec.output<std::shared_ptr<AdvNetBurstParams>>(q.output_port_);
+    }
+  }
 
   spec.param(
       cfg_,

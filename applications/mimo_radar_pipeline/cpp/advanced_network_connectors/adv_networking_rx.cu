@@ -292,11 +292,12 @@ void AdvConnectorOpRx::compute(InputContext& op_input,
   auto burst = burst_opt.value();
 
   // If packets are coming in from our non-GPUDirect queue, free them and move on
-  if (adv_net_get_q_id(burst) == 0) {  // queue 0 is configured to be non-GPUDirect in yaml config
-    adv_net_free_cpu_pkts_and_burst(burst);
-    HOLOSCAN_LOG_INFO("Freeing CPU packets on queue 0");
-    return;
-  }
+  //   if (adv_net_get_q_id(burst) == 0) {  // queue 0 is configured to be non-GPUDirect in yaml
+  //   config
+  //     adv_net_free_cpu_pkts_and_burst(burst);
+  //     HOLOSCAN_LOG_INFO("Freeing CPU packets on queue 0");
+  //     return;
+  //   }
 
   // Header data split saves off the GPU pointers into a host-pinned buffer to reassemble later.
   // Once enough packets are aggregated, a reorder kernel is launched. In CPU-only mode the

@@ -39,6 +39,11 @@ class App : public holoscan::Application {
     auto converter1 =
         make_operator<ops::ComplexIntToFloatOp>("converter1", from_config("radar_pipeline"));
 
+    auto drf_sink0 =
+        make_operator<ops::DigitalRFSinkOp>("drf_sink0", from_config("digital_rf_ch0"));
+    auto drf_sink1 =
+        make_operator<ops::DigitalRFSinkOp>("drf_sink1", from_config("digital_rf_ch1"));
+
     // Network operators
     // Advanced
     auto adv_net_rx =
@@ -57,6 +62,9 @@ class App : public holoscan::Application {
     add_flow(adv_net_rx, adv_rx_pkt1, {{"ch1", "burst_in"}});
     add_flow(adv_rx_pkt1, converter1, {{"rf_out", "rf_in"}});
     add_flow(converter1, rx);
+
+    add_flow(adv_rx_pkt0, drf_sink0);
+    add_flow(adv_rx_pkt1, drf_sink1);
   }
 
  public:

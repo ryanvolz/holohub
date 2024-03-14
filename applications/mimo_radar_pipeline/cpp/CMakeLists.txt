@@ -24,14 +24,19 @@ if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
 endif()
 enable_language(CUDA)
 
-# Download MatX
+# Download external dependencies
 include(FetchContent)
 FetchContent_Declare(
   MatX
   GIT_REPOSITORY https://github.com/ryanvolz/MatX.git
   GIT_TAG mimo_radar
 )
-FetchContent_MakeAvailable(MatX)
+FetchContent_Declare(libdigital_rf
+  GIT_REPOSITORY https://github.com/MITHaystack/digital_rf
+  GIT_TAG 2.6.8
+  SOURCE_SUBDIR c
+)
+FetchContent_MakeAvailable(MatX libdigital_rf)
 
 # Main
 add_executable(mimo_radar_pipeline
@@ -42,6 +47,7 @@ add_executable(mimo_radar_pipeline
 add_subdirectory(advanced_network_connectors)
 
 target_link_libraries(mimo_radar_pipeline
+  digital_rf::digital_rf
   matx::matx
   holoscan::core
   holoscan::advanced_network_rx

@@ -14,6 +14,11 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+#include <filesystem>
+
+#include <digital_rf.h>
+#include <hdf5.h>
+
 #include "process.h"
 
 namespace holoscan::ops {
@@ -74,6 +79,111 @@ void ComplexIntToFloatOp::compute(InputContext& op_input, OutputContext& op_outp
 
   auto params = std::make_shared<ComplexRFArray>(complex_data, in->metadata, stream);
   op_output.emit(params, "rf_out");
+}
+
+// ----- DigitalRFSinkOp ---------------------------------------------------
+void DigitalRFSinkOp::setup(OperatorSpec& spec) {
+  spec.input<std::shared_ptr<RFArray>>("rf_in");
+  spec.param<std::string>(channel_dir,
+                          "channel_dir",
+                          "Channel directory",
+                          "Directory for writing the Digital RF channel",
+                          {});
+  spec.param<uint64_t>(subdir_cadence_secs,
+                       "subdir_cadence_secs",
+                       "Subdirectory cadence",
+                       "Subdirectory cadence in number of seconds",
+                       3600);
+  spec.param<uint64_t>(file_cadence_millisecs,
+                       "file_cadence_millisecs",
+                       "File cadence",
+                       "File cadence in milliseconds",
+                       1000);
+  spec.param<std::string>(
+      uuid, "uuid", "UUID string", "Unique identifier string for this channel", "holoscan");
+  spec.param<int>(compression_level,
+                  "compression_level",
+                  "Compression level",
+                  "HDF5 compression level (0 for none, 1-9 for gzip level)",
+                  0);
+  spec.param<bool>(checksum, "checksum", "Enable checksum", "Enable HDF5 checksum", false);
+  spec.param<bool>(is_continuous,
+                   "is_continuous",
+                   "Enable continuous writing mode",
+                   "Continuous writing mode (true) vs. gapped mode (false)",
+                   true);
+  spec.param<bool>(marching_dots,
+                   "marching_dots",
+                   "Enable marching dots",
+                   "Enable marching dots for every file written",
+                   false);
+}
+
+void DigitalRFSinkOp::initialize() {
+  HOLOSCAN_LOG_INFO("DigitalRFSinkOp::initialize()");
+  holoscan::Operator::initialize();
+
+  // make sure the channel directory exists
+  channel_dir_path = channel_dir.get();
+  std::filesystem::create_directories(channel_dir_path);
+
+  HOLOSCAN_LOG_INFO("DigitalRFSinkOp::initialize() done");
+}
+
+/**
+ * @brief  Write the RF input to files in Digital RF format
+ */
+void DigitalRFSinkOp::compute(InputContext& op_input, OutputContext& op_output, ExecutionContext&) {
+  HOLOSCAN_LOG_INFO("DigitalRFSinkOp::compute() called");
+  auto in = op_input.receive<std::shared_ptr<RFArray>>("rf_in").value();
+  auto data = in->data;
+  auto metadata = in->metadata();
+
+  // initialize writer using data specifications from the first array
+  if (!writer_initialized) {
+    start_idx = metadata.sample_idx;
+    sample_rate_numerator = metadata.sample_rate_numerator;
+    sample_rate_denominator = metadata.sample_rate_denominator;
+    num_subchannels = data.Size(2);
+    HOLOSCAN_LOG_INFO(
+        "Initializing Digital RF writer with start_idx {}, sample_rate {}/{}, num_subchannels {}",
+        start_idx,
+        sample_rate_numerator,
+        sample_rate_denominator,
+        num_subchannels);
+    drf_writer = digital_rf_create_write_hdf5(channel_dir_path.string().data(),
+                                              hdf5_dtype,
+                                              subdir_cadence_secs.get(),
+                                              file_cadence_millisecs.get(),
+                                              start_idx,
+                                              sample_rate_numerator,
+                                              sample_rate_denominator,
+                                              uuid.get().data(),
+                                              compression_level.get(),
+                                              checksum.get(),
+                                              is_complex,
+                                              num_subchannels,
+                                              is_continuous.get(),
+                                              marching_dots.get());
+    writer_initialized = true;
+  }
+
+  HOLOSCAN_LOG_TRACE("Writing {} samples @ {}", data.Size(0) * data.Size(1), metadata.sample_idx);
+  auto result = digital_rf_write_hdf5(
+      drf_writer, metadata.sample_idx - start_idx, data.Data(), data.Size(0) * data.Size(1));
+  if (result) {
+    HOLOSCAN_LOG_ERROR("Digital RF write call failed with error {}, sample_idx {}  write_len {}",
+                       result,
+                       metadata.sample_idx - start_idx,
+                       data.Size(0) * data.Size(1));
+  }
+}
+
+void DigitalRFSinkOp::stop() {
+  // clean up digital RF writer object
+  auto result = digital_rf_close_write_hdf5(drf_writer);
+  if (result) { HOLOSCAN_LOG_ERROR("Failed to close Digital RF writer with error {}", result); }
+  writer_initialized = false;
 }
 
 }  // namespace holoscan::ops

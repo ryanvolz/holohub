@@ -78,3 +78,11 @@ radar_pipeline:
   num_samples: 1000         # Number of samples to group together in a cycle (e.g. waveform repeats)
   num_subchannels: 8        # Number of subchannels for each time sample before moving to next time
   buffer_size: 100          # Number of RF arrays to store in rx buffer
+
+digital_rf_ch0:
+  channel_dir: tmp_drf/ch0
+  uuid: mimo_radar_pipeline_ch0
+
+digital_rf_ch1:
+  channel_dir: tmp_drf/ch1
+  uuid: mimo_radar_pipeline_ch1

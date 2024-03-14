@@ -24,7 +24,7 @@ endif()
 enable_language(CUDA)
 
 # Main
-add_library(advanced_network_connector_rx
+add_library(advanced_network_connector_rx STATIC
   adv_networking_rx.cu
 )
 

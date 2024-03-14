@@ -16,6 +16,11 @@
  */
 #pragma once
 
+#include <filesystem>
+
+#include <digital_rf.h>
+#include <hdf5.h>
+
 #include "common.h"
 
 // ---------- Structures ----------
@@ -53,5 +58,41 @@ class ComplexIntToFloatOp : public Operator {
 
   tensor_t<complex_t, 3> complex_data;
 };  // ComplexIntToFloatOp
+
+class DigitalRFSinkOp : public Operator {
+ public:
+  HOLOSCAN_OPERATOR_FORWARD_ARGS(DigitalRFSinkOp)
+
+  DigitalRFSinkOp() = default;
+
+  void setup(OperatorSpec& spec) override;
+  void initialize() override;
+
+  /**
+   * @brief Write the RF input to files in Digital RF format
+   */
+  void compute(InputContext& op_input, OutputContext& op_output, ExecutionContext&) override;
+  void stop() override;
+
+ private:
+  Parameter<std::string> channel_dir;
+  Parameter<uint64_t> subdir_cadence_secs;
+  Parameter<uint64_t> file_cadence_millisecs;
+  Parameter<std::string> uuid;
+  Parameter<int> compression_level;
+  Parameter<bool> checksum;
+  Parameter<bool> is_continuous;
+  Parameter<bool> marching_dots;
+
+  bool writer_initialized = false;
+  hid_t hdf5_dtype = H5T_STD_I16LE;
+  bool is_complex = true;
+  uint64_t start_idx;
+  uint64_t sample_rate_numerator;
+  uint64_t sample_rate_denominator;
+  uint64_t num_subchannels;
+  std::filesystem::path channel_dir_path;
+  Digital_rf_write_object* drf_writer;
+};  // DigitalRFSinkOp
 
 }  // namespace holoscan::ops

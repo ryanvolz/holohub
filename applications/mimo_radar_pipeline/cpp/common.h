@@ -34,15 +34,18 @@ using sample_t = complex_int_type;
 // Meta data for received signal
 struct RfMetaData {
   uint64_t sample_idx;
-  uint16_t channel_idx;
-  uint16_t pkt_samples;
-  uint32_t reserved0;
-  uint64_t reserved1;
+  uint64_t sample_rate_numerator;
+  uint64_t sample_rate_denominator;
+  uint32_t channel_idx;
+  uint32_t num_subchannels;
+  uint32_t pkt_samples;
+  uint16_t bits_per_int;
+  unsigned is_complex : 1;
+  unsigned reserved0 : 7;
+  uint8_t reserved1;
   uint64_t reserved2;
   uint64_t reserved3;
   uint64_t reserved4;
-  uint64_t reserved5;
-  uint64_t reserved6;
 } __attribute__((__packed__));
 
 // Represents a single RF transmission

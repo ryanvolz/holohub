@@ -188,6 +188,7 @@ class AdvConnectorOpRx : public Operator {
   size_t samples_per_arr;
   AdvBufferTracking buffer_track;
   tensor_t<sample_t, 4> rf_data;
+  tensor_t<RfMetaData, 1> rf_metadata;
   cudaStream_t proc_stream;
 };  // AdvConnectorOpRx
 

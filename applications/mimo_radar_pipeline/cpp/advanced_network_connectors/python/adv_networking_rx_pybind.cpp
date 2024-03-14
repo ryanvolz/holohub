@@ -94,11 +94,12 @@ Advanced Networking Connector RX Python Bindings
 
   py::class_<RfMetaData>(m, "RfMetaData")
       .def_readwrite("sample_idx", &RfMetaData::sample_idx)
+      .def_readwrite("sample_rate_numerator", &RfMetaData::sample_rate_numerator)
+      .def_readwrite("sample_rate_denominator", &RfMetaData::sample_rate_denominator)
       .def_readwrite("channel_idx", &RfMetaData::channel_idx);
 
   py::class_<RFArray>(m, "RFArray")
       .def_readwrite("data", &RFArray::data)
-      .def_readwrite("sample_idx", &RFArray::sample_idx)
-      .def_readwrite("channel_idx", &RFArray::channel_idx);
+      .def_readwrite("metadata", &RFArray::metadata);
 }  // PYBIND11_MODULE NOLINT
 }  // namespace holoscan::ops

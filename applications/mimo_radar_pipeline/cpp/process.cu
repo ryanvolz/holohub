@@ -72,8 +72,7 @@ void ComplexIntToFloatOp::compute(InputContext& op_input, OutputContext& op_outp
        matx::slice(in_data_float, {0, 0, 1}, {matxEnd, matxEnd, matxEnd}, {1, 1, 2}))
       .run(stream);
 
-  auto params =
-      std::make_shared<ComplexRFArray>(complex_data, in->sample_idx, in->channel_idx, stream);
+  auto params = std::make_shared<ComplexRFArray>(complex_data, in->metadata, stream);
   op_output.emit(params, "rf_out");
 }
 

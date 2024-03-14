@@ -23,7 +23,7 @@
  * metadata accordingly. This functionalitycan be useful when testing, where we
  * have a packet generator that isn't generating packets that use our data format.
  */
-__device__ __forceinline__ void gen_meta_from_pkt_cnt(RfMetaData* meta, const uint64_t pkt_cnt,
+__device__ __forceinline__ void gen_meta_from_pkt_cnt(RfPktHeader* meta, const uint64_t pkt_cnt,
                                                       const uint16_t num_samples,
                                                       const uint16_t num_subchannels) {
   meta->sample_idx = static_cast<uint16_t>(SPOOF_SAMPLES_PER_PKT * pkt_cnt);
@@ -32,11 +32,11 @@ __device__ __forceinline__ void gen_meta_from_pkt_cnt(RfMetaData* meta, const ui
 }
 #endif
 
-__global__ void place_packet_data_kernel(sample_t* out, const void* const* const __restrict__ in,
-                                         int* sample_cnt, bool* received_end,
-                                         const size_t buffer_pos, const uint16_t buffer_size,
-                                         const uint16_t num_cycles, const uint16_t num_samples,
-                                         const uint16_t num_subchannels,
+__global__ void place_packet_data_kernel(sample_t* out, RfMetaData* out_metadata,
+                                         const void* const* const __restrict__ in, int* sample_cnt,
+                                         bool* received_end, const size_t buffer_pos,
+                                         const uint16_t buffer_size, const uint16_t num_cycles,
+                                         const uint16_t num_samples, const uint16_t num_subchannels,
                                          const uint64_t total_pkts) {
   const uint32_t sample_stride = static_cast<uint32_t>(num_subchannels);
   const uint32_t group_stride = sample_stride * num_samples;
@@ -45,12 +45,12 @@ __global__ void place_packet_data_kernel(sample_t* out, const void* const* const
 
 #if SPOOF_PACKET_DATA
   // Generate fake packet meta-data from the packet count
-  RfMetaData meta_obj;
-  RfMetaData *meta = &meta_obj;
+  RfPktHeader meta_obj;
+  RfPktHeader* meta = &meta_obj;
   gen_meta_from_pkt_cnt(meta, total_pkts + pkt_idx, num_samples, num_subchannels);
   const sample_t* samples = reinterpret_cast<const sample_t*>(in[pkt_idx]);
 #else
-  const RfMetaData *meta   = reinterpret_cast<const RfMetaData *>(in[pkt_idx]);
+  const RfPktHeader* meta = reinterpret_cast<const RfPktHeader*>(in[pkt_idx]);
   const sample_t* samples = reinterpret_cast<const sample_t*>(meta + 1);
 #endif
 
@@ -78,6 +78,15 @@ __global__ void place_packet_data_kernel(sample_t* out, const void* const* const
     }
 
     if (threadIdx.x == 0) {
+      if (sample_cnt[buffer_idx] == 0) {
+        // set metadata the first time we write to this buffer idx
+        // (sample_idx corresponding to the start of the output array)
+        out_metadata->sample_idx = cycle_idx * (num_cycles * num_samples);
+        out_metadata->sample_rate_numerator = meta->sample_rate_numerator;
+        out_metadata->sample_rate_denominator = meta->sample_rate_denominator;
+        out_metadata->channel_idx = meta->channel_idx;
+      }
+
       // todo Smarter way than atomicAdd
       atomicAdd(&sample_cnt[buffer_idx], samples_to_write * num_subchannels);
 
@@ -90,13 +99,15 @@ __global__ void place_packet_data_kernel(sample_t* out, const void* const* const
   }
 }
 
-void place_packet_data(sample_t* out, const void* const* const in, int* sample_cnt,
-                       bool* received_end, const size_t buffer_pos, const uint32_t num_pkts,
-                       const uint16_t buffer_size, const uint16_t num_cycles,
-                       const uint16_t num_samples, const uint16_t num_subchannels,
-                       const uint64_t total_pkts, cudaStream_t stream) {
+void place_packet_data(sample_t* out, RfMetaData* out_metadata, void* const* const in,
+                       int* sample_cnt, bool* received_end, const size_t buffer_pos,
+                       const uint32_t num_pkts, const uint16_t buffer_size,
+                       const uint16_t num_cycles, const uint16_t num_samples,
+                       const uint16_t num_subchannels, const uint64_t total_pkts,
+                       cudaStream_t stream) {
   // Each thread processes an individual packet
   place_packet_data_kernel<<<num_pkts, 128, buffer_size * sizeof(int), stream>>>(out,
+                                                                                 out_metadata,
                                                                                  in,
                                                                                  sample_cnt,
                                                                                  received_end,
@@ -183,19 +194,19 @@ void AdvConnectorOpRx::initialize() {
       cudaMallocHost((void**)&h_dev_ptrs_[n], sizeof(void*) * batch_size_.get());
     }
 
-    buffer_track = AdvBufferTracking(buffer_size_.get());
-    make_tensor(
-        rf_data,
-        {buffer_size_.get(), num_cycles_.get(), num_samples_.get(), num_subchannels_.get()});
-
     cudaStreamCreate(&streams_[n]);
     cudaEventCreate(&events_[n]);
   }
 
+  buffer_track = AdvBufferTracking(buffer_size_.get());
+  make_tensor(rf_data,
+              {buffer_size_.get(), num_cycles_.get(), num_samples_.get(), num_subchannels_.get()});
+  make_tensor(rf_metadata, {buffer_size_.get()});
+
 #if SPOOF_PACKET_DATA
   // Compute packets delivered per pulse and max waveform ID based on parameters
   const size_t spoof_pkt_size =
-      sizeof(sample_t) * num_subchannels_.get() * SPOOF_SAMPLES_PER_PKT + sizeof(RfMetaData);
+      sizeof(sample_t) * num_subchannels_.get() * SPOOF_SAMPLES_PER_PKT + sizeof(RfPktHeader);
   HOLOSCAN_LOG_WARN("Spoofing packet metadata, ignoring packet header.");
   if (spoof_pkt_size >= max_packet_size_.get()) {
     HOLOSCAN_LOG_ERROR("Max packets size ({}) can't fit the expected samples ({})",
@@ -243,12 +254,11 @@ void AdvConnectorOpRx::free_bufs_and_emit_arrays(OutputContext& op_output) {
     }
 
     // Received End-of-Array (EOA) message, emit to downstream operators
-    auto params =
-        std::make_shared<RFArray>(rf_data.Slice<3>({static_cast<index_t>(pos_wrap), 0, 0, 0},
-                                                   {matxDropDim, matxEnd, matxEnd, matxEnd}),
-                                  0,
-                                  0,
-                                  proc_stream);
+    auto params = std::make_shared<RFArray>(
+        rf_data.Slice<3>({static_cast<index_t>(pos_wrap), 0, 0, 0},
+                         {matxDropDim, matxEnd, matxEnd, matxEnd}),
+        rf_metadata.Slice<0>({static_cast<index_t>(pos_wrap)}, {matxDropDim}),
+        proc_stream);
 
     op_output.emit(params, "rf_out");
     HOLOSCAN_LOG_INFO("Emitting sample cycle {} with {}/{} IQ samples",
@@ -316,6 +326,7 @@ void AdvConnectorOpRx::compute(InputContext& op_input,
 
       // Copy packet I/Q contents to appropriate location in 'rf_data'
       place_packet_data(rf_data.Data(),
+                        rf_metadata.Data(),
                         h_dev_ptrs_[cur_idx],
                         buffer_track.sample_cnt_d,
                         buffer_track.received_end_d,

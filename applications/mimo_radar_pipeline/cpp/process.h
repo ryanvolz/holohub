@@ -21,13 +21,12 @@
 // ---------- Structures ----------
 struct ComplexRFArray {
   tensor_t<complex_t, 3> data;
-  uint64_t sample_idx;
-  uint16_t channel_idx;
+  tensor_t<RfMetaData, 0> metadata;
   cudaStream_t stream;
 
-  ComplexRFArray(tensor_t<complex_t, 3> _data, uint64_t _sample_idx, uint16_t _channel_idx,
+  ComplexRFArray(tensor_t<complex_t, 3> _data, tensor_t<RfMetaData, 0> _metadata,
                  cudaStream_t _stream)
-      : data{_data}, sample_idx{_sample_idx}, channel_idx{channel_idx}, stream{_stream} {}
+      : data{_data}, metadata{_metadata}, stream{_stream} {}
 };
 
 // ---------- Operators ----------

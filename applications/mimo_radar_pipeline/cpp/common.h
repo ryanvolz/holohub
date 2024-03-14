@@ -31,8 +31,8 @@ struct complex_int_type {
 } __attribute__((__packed__));
 using sample_t = complex_int_type;
 
-// Meta data for received signal
-struct RfMetaData {
+// Packet header for RF signal
+struct RfPktHeader {
   uint64_t sample_idx;
   uint64_t sample_rate_numerator;
   uint64_t sample_rate_denominator;
@@ -48,14 +48,20 @@ struct RfMetaData {
   uint64_t reserved4;
 } __attribute__((__packed__));
 
+// Metadata for RF signal
+struct RfMetaData {
+  uint64_t sample_idx;
+  uint64_t sample_rate_numerator;
+  uint64_t sample_rate_denominator;
+  uint32_t channel_idx;
+};
+
 // Represents a single RF transmission
 struct RFArray {
   tensor_t<sample_t, 3> data;
-  uint64_t sample_idx;
-  uint16_t channel_idx;
+  tensor_t<RfMetaData, 0> metadata;
   cudaStream_t stream;
 
-  RFArray(tensor_t<sample_t, 3> _data, uint64_t _sample_idx, uint16_t _channel_idx,
-          cudaStream_t _stream)
-      : data{_data}, sample_idx{_sample_idx}, channel_idx{channel_idx}, stream{_stream} {}
+  RFArray(tensor_t<sample_t, 3> _data, tensor_t<RfMetaData, 0> _metadata, cudaStream_t _stream)
+      : data{_data}, metadata{_metadata}, stream{_stream} {}
 };

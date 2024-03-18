@@ -61,23 +61,23 @@ __global__ void place_packet_data_kernel(sample_t* out, RfMetaData* out_metadata
 #endif
 
   uint64_t sample_idx = meta->sample_idx;
-  uint32_t pkt_samples = min(meta->pkt_samples, max_samples_per_packet);
+  const uint32_t pkt_samples = min(meta->pkt_samples, max_samples_per_packet);
 
   while (sample_idx < meta->sample_idx + pkt_samples) {
     // break sample index down into (buffer, group, sample) index
-    const uint64_t group_idx = sample_idx / num_samples;
-    const uint16_t group_sample_idx = sample_idx % num_samples;
-    const uint64_t cycle_idx = group_idx / num_cycles;
-    const uint16_t cycle_group_idx = group_idx % num_cycles;
-    const uint16_t buffer_idx = cycle_idx % buffer_size;
+    uint64_t group_idx = sample_idx / num_samples;
+    uint16_t group_sample_idx = sample_idx % num_samples;
+    uint64_t cycle_idx = group_idx / num_cycles;
+    uint16_t cycle_group_idx = group_idx % num_cycles;
+    uint16_t buffer_idx = cycle_idx % buffer_size;
 
-    const uint32_t samples_before_cycle_wrap =
+    uint32_t samples_before_cycle_wrap =
         (num_cycles - cycle_group_idx) * num_samples - group_sample_idx;
-    const uint32_t samples_to_write = min(pkt_samples, samples_before_cycle_wrap);
+    uint32_t samples_to_write = min(pkt_samples, samples_before_cycle_wrap);
 
     // Compute pointer in buffer memory
-    const uint32_t idx_offset = group_sample_idx * sample_stride + cycle_group_idx * group_stride +
-                                buffer_idx * cycle_stride;
+    uint32_t idx_offset = group_sample_idx * sample_stride + cycle_group_idx * group_stride +
+                          buffer_idx * cycle_stride;
 
     // Copy data
     for (uint16_t i = threadIdx.x; i < samples_to_write * num_subchannels; i += blockDim.x) {
@@ -88,10 +88,10 @@ __global__ void place_packet_data_kernel(sample_t* out, RfMetaData* out_metadata
       if (sample_cnt[buffer_idx] == 0) {
         // set metadata the first time we write to this buffer idx
         // (sample_idx corresponding to the start of the output array)
-        out_metadata->sample_idx = cycle_idx * (num_cycles * num_samples);
-        out_metadata->sample_rate_numerator = meta->sample_rate_numerator;
-        out_metadata->sample_rate_denominator = meta->sample_rate_denominator;
-        out_metadata->channel_idx = meta->channel_idx;
+        out_metadata[buffer_idx].sample_idx = cycle_idx * (num_cycles * num_samples);
+        out_metadata[buffer_idx].sample_rate_numerator = meta->sample_rate_numerator;
+        out_metadata[buffer_idx].sample_rate_denominator = meta->sample_rate_denominator;
+        out_metadata[buffer_idx].channel_idx = meta->channel_idx;
       }
 
       // todo Smarter way than atomicAdd
@@ -112,7 +112,7 @@ void place_packet_data(sample_t* out, RfMetaData* out_metadata, void* const* con
                        const uint16_t num_cycles, const uint16_t num_samples,
                        const uint16_t num_subchannels, const uint32_t max_samples_per_packet,
                        const uint64_t total_pkts, cudaStream_t stream) {
-  // Each thread processes an individual packet
+  // Each block processes an individual packet
   place_packet_data_kernel<<<num_pkts, 128, buffer_size * sizeof(int), stream>>>(
       out,
       out_metadata,

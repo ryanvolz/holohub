@@ -24,7 +24,7 @@ using namespace matx;
 using float_t = float;
 using complex_t = cuda::std::complex<float_t>;
 
-using real_t = int32_t;
+using real_t = int16_t;
 struct complex_int_type {
   real_t r;
   real_t i;

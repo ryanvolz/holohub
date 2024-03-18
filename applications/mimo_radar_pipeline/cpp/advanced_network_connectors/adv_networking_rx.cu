@@ -37,6 +37,7 @@ __global__ void place_packet_data_kernel(sample_t* out, RfMetaData* out_metadata
                                          bool* received_end, const size_t buffer_pos,
                                          const uint16_t buffer_size, const uint16_t num_cycles,
                                          const uint16_t num_samples, const uint16_t num_subchannels,
+                                         const uint32_t max_samples_per_packet,
                                          const uint64_t total_pkts) {
   const uint32_t sample_stride = static_cast<uint32_t>(num_subchannels);
   const uint32_t group_stride = sample_stride * num_samples;
@@ -55,8 +56,9 @@ __global__ void place_packet_data_kernel(sample_t* out, RfMetaData* out_metadata
 #endif
 
   uint64_t sample_idx = meta->sample_idx;
+  uint32_t pkt_samples = min(meta->pkt_samples, max_samples_per_packet);
 
-  while (sample_idx < meta->sample_idx + meta->pkt_samples) {
+  while (sample_idx < meta->sample_idx + pkt_samples) {
     // break sample index down into (buffer, group, sample) index
     const uint64_t group_idx = sample_idx / num_samples;
     const uint16_t group_sample_idx = sample_idx % num_samples;
@@ -66,7 +68,7 @@ __global__ void place_packet_data_kernel(sample_t* out, RfMetaData* out_metadata
 
     const uint32_t samples_before_cycle_wrap =
         (num_cycles - cycle_group_idx) * num_samples - group_sample_idx;
-    const uint32_t samples_to_write = min(meta->pkt_samples, samples_before_cycle_wrap);
+    const uint32_t samples_to_write = min(pkt_samples, samples_before_cycle_wrap);
 
     // Compute pointer in buffer memory
     const uint32_t idx_offset = group_sample_idx * sample_stride + cycle_group_idx * group_stride +
@@ -103,20 +105,22 @@ void place_packet_data(sample_t* out, RfMetaData* out_metadata, void* const* con
                        int* sample_cnt, bool* received_end, const size_t buffer_pos,
                        const uint32_t num_pkts, const uint16_t buffer_size,
                        const uint16_t num_cycles, const uint16_t num_samples,
-                       const uint16_t num_subchannels, const uint64_t total_pkts,
-                       cudaStream_t stream) {
+                       const uint16_t num_subchannels, const uint32_t max_samples_per_packet,
+                       const uint64_t total_pkts, cudaStream_t stream) {
   // Each thread processes an individual packet
-  place_packet_data_kernel<<<num_pkts, 128, buffer_size * sizeof(int), stream>>>(out,
-                                                                                 out_metadata,
-                                                                                 in,
-                                                                                 sample_cnt,
-                                                                                 received_end,
-                                                                                 buffer_pos,
-                                                                                 buffer_size,
-                                                                                 num_cycles,
-                                                                                 num_samples,
-                                                                                 num_subchannels,
-                                                                                 total_pkts);
+  place_packet_data_kernel<<<num_pkts, 128, buffer_size * sizeof(int), stream>>>(
+      out,
+      out_metadata,
+      in,
+      sample_cnt,
+      received_end,
+      buffer_pos,
+      buffer_size,
+      num_cycles,
+      num_samples,
+      num_subchannels,
+      max_samples_per_packet,
+      total_pkts);
 }
 
 namespace holoscan::ops {
@@ -175,6 +179,12 @@ void AdvConnectorOpRx::initialize() {
   holoscan::Operator::initialize();
 
   cudaStreamCreate(&proc_stream);
+
+  // Maximum number of RF samples (of num_subchannels I/Q samples) per packet
+  max_samples_per_packet =
+      (max_packet_size_.get() - sizeof(RfPktHeader)) / (num_subchannels_.get() * sizeof(sample_t));
+
+  HOLOSCAN_LOG_INFO("Max samples per packet: {}", max_samples_per_packet);
 
   // Total number of I/Q samples per array
   samples_per_arr = num_cycles_.get() * num_samples_.get() * num_subchannels_.get();
@@ -337,6 +347,7 @@ void AdvConnectorOpRx::compute(InputContext& op_input,
                         num_cycles_.get(),
                         num_samples_.get(),
                         num_subchannels_.get(),
+                        max_samples_per_packet,
                         ttl_pkts_recv_,  // only needed if spoofing packets
                         streams_[cur_idx]);
 

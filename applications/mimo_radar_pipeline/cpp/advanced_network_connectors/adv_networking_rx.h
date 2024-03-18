@@ -183,8 +183,8 @@ class AdvConnectorOpRx : public Operator {
   int64_t ttl_bytes_recv_ = 0;           // Total bytes received in operator
   int64_t ttl_pkts_recv_  = 0;           // Total packets received in operator
   int64_t aggr_pkts_recv_ = 0;           // Aggregate packets received in processing batch
-  uint16_t nom_payload_size_;            // Nominal payload size (no headers)
 
+  uint32_t max_samples_per_packet;
   size_t samples_per_arr;
   AdvBufferTracking buffer_track;
   tensor_t<sample_t, 4> rf_data;

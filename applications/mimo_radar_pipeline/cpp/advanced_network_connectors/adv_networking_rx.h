@@ -47,6 +47,8 @@ struct AdvBufferTracking {
   int *sample_cnt_d;
   bool *received_end_h;
   bool *received_end_d;
+  unsigned long long int* counter_h;
+  unsigned long long int* counter_d;
 
   AdvBufferTracking() = default;
   explicit AdvBufferTracking(const size_t _buffer_size)
@@ -62,6 +64,12 @@ struct AdvBufferTracking {
     cudaMalloc((void **)&received_end_d,     buffer_size*sizeof(bool));
     memset(received_end_h,     0, buffer_size*sizeof(bool));
     cudaMemset(received_end_d, 0, buffer_size*sizeof(bool));
+
+    // Reserve buffer counter
+    cudaMallocHost((void**)&counter_h, buffer_size * sizeof(unsigned long long int));
+    cudaMalloc((void**)&counter_d, buffer_size * sizeof(unsigned long long int));
+    memset(counter_h, 0, buffer_size * sizeof(unsigned long long int));
+    cudaMemset(counter_d, 0, buffer_size * sizeof(unsigned long long int));
   }
 
   cudaError_t transferSamples(const cudaMemcpyKind kind, cudaStream_t stream) {
@@ -95,7 +103,21 @@ struct AdvBufferTracking {
     return cudaMemcpyAsync(dst, src, buffer_size*sizeof(bool), kind, stream);
   }
 
-  // TODO: Faster way than two separate memcpy's?
+  cudaError_t transferCounters(const cudaMemcpyKind kind, cudaStream_t stream) {
+    void* src;
+    void* dst;
+
+    if (kind == cudaMemcpyHostToDevice) {
+      src = counter_h;
+      dst = counter_d;
+    } else {
+      src = counter_d;
+      dst = counter_h;
+    }
+    return cudaMemcpyAsync(dst, src, buffer_size * sizeof(unsigned long long int), kind, stream);
+  }
+
+  // TODO: Faster way than three separate memcpy's?
   cudaError_t transfer(const cudaMemcpyKind kind, cudaStream_t stream) {
     cudaError_t err;
     err = transferSamples(kind, stream);
@@ -106,12 +128,15 @@ struct AdvBufferTracking {
     if (err != cudaSuccess) {
       return err;
     }
+    err = transferCounters(kind, stream);
+    if (err != cudaSuccess) { return err; }
     return cudaSuccess;
   }
 
   void increment() {
     received_end_h[pos_wrap] = false;
     sample_cnt_h[pos_wrap] = 0;
+    counter_h[pos_wrap] += buffer_size;
     pos++;
     pos_wrap = pos % buffer_size;
   }

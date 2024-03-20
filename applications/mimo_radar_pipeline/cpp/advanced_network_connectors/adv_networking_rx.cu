@@ -24,13 +24,12 @@
  * have a packet generator that isn't generating packets that use our data format.
  */
 __device__ __forceinline__ void gen_meta_from_pkt_cnt(RfPktHeader* meta, const uint64_t pkt_cnt,
-                                                      const uint16_t num_samples,
                                                       const uint16_t num_subchannels) {
   meta->sample_idx = static_cast<uint64_t>(SPOOF_SAMPLES_PER_PKT * pkt_cnt);
   meta->sample_rate_numerator = 1000000;
   meta->sample_rate_denominator = 1;
   meta->channel_idx = 0;
-  meta->num_subchannels = 8;
+  meta->num_subchannels = num_subchannels;
   meta->pkt_samples = SPOOF_SAMPLES_PER_PKT;
   meta->bits_per_int = 128;
   meta->is_complex = 1;
@@ -39,45 +38,49 @@ __device__ __forceinline__ void gen_meta_from_pkt_cnt(RfPktHeader* meta, const u
 
 __global__ void place_packet_data_kernel(sample_t* out, RfMetaData* out_metadata,
                                          const void* const* const __restrict__ in, int* sample_cnt,
-                                         bool* received_end, const size_t buffer_pos,
+                                         bool* received_end, unsigned long long int* buffer_counter,
                                          const uint16_t buffer_size, const uint16_t num_cycles,
                                          const uint16_t num_samples, const uint16_t num_subchannels,
                                          const uint32_t max_samples_per_packet,
                                          const uint64_t total_pkts) {
   const uint32_t sample_stride = static_cast<uint32_t>(num_subchannels);
-  const uint32_t group_stride = sample_stride * num_samples;
-  const uint32_t cycle_stride = group_stride * num_cycles;
+  const uint32_t cycle_stride = sample_stride * num_samples;
+  const uint32_t buffer_stride = cycle_stride * num_cycles;
   const uint32_t pkt_idx = blockIdx.x;
 
 #if SPOOF_PACKET_DATA
   // Generate fake packet meta-data from the packet count
   RfPktHeader meta_obj;
   RfPktHeader* meta = &meta_obj;
-  gen_meta_from_pkt_cnt(meta, total_pkts + pkt_idx, num_samples, num_subchannels);
+  gen_meta_from_pkt_cnt(meta, total_pkts + pkt_idx, num_subchannels);
   const sample_t* samples = reinterpret_cast<const sample_t*>(in[pkt_idx]);
 #else
   const RfPktHeader* meta = reinterpret_cast<const RfPktHeader*>(in[pkt_idx]);
   const sample_t* samples = reinterpret_cast<const sample_t*>(meta + 1);
 #endif
 
-  uint64_t sample_idx = meta->sample_idx;
+  uint64_t global_sample_idx = meta->sample_idx;
   const uint32_t pkt_samples = min(meta->pkt_samples, max_samples_per_packet);
 
-  while (sample_idx < meta->sample_idx + pkt_samples) {
-    // break sample index down into (buffer, group, sample) index
-    uint64_t group_idx = sample_idx / num_samples;
-    uint16_t group_sample_idx = sample_idx % num_samples;
-    uint64_t cycle_idx = group_idx / num_cycles;
-    uint16_t cycle_group_idx = group_idx % num_cycles;
-    uint16_t buffer_idx = cycle_idx % buffer_size;
+  while (global_sample_idx < meta->sample_idx + pkt_samples) {
+    // break sample index down into (buffer, cycle, sample) index
+    uint64_t global_cycle_idx = global_sample_idx / num_samples;
+    uint16_t sample_idx = global_sample_idx % num_samples;
+    unsigned long long int global_buffer_idx = global_cycle_idx / num_cycles;
+    uint16_t cycle_idx = global_cycle_idx % num_cycles;
+    uint16_t buffer_idx = global_buffer_idx % buffer_size;
 
-    uint32_t samples_before_cycle_wrap =
-        (num_cycles - cycle_group_idx) * num_samples - group_sample_idx;
+    uint32_t samples_before_cycle_wrap = (num_cycles - cycle_idx) * num_samples - sample_idx;
     uint32_t samples_to_write = min(pkt_samples, samples_before_cycle_wrap);
 
+    global_sample_idx += samples_to_write;
+
+    // Drop old samples
+    if (global_buffer_idx < buffer_counter[buffer_idx]) { continue; }
+
     // Compute pointer in buffer memory
-    uint32_t idx_offset = group_sample_idx * sample_stride + cycle_group_idx * group_stride +
-                          buffer_idx * cycle_stride;
+    uint32_t idx_offset =
+        sample_idx * sample_stride + cycle_idx * cycle_stride + buffer_idx * buffer_stride;
 
     // Copy data
     for (uint16_t i = threadIdx.x; i < samples_to_write * num_subchannels; i += blockDim.x) {
@@ -85,10 +88,15 @@ __global__ void place_packet_data_kernel(sample_t* out, RfMetaData* out_metadata
     }
 
     if (threadIdx.x == 0) {
+      if (atomicExch(&buffer_counter[buffer_idx], global_buffer_idx) != global_buffer_idx) {
+        // reset the buffer metadata for the current cycle
+        sample_cnt[buffer_idx] = 0;
+        received_end[buffer_idx] = 0;
+      }
       if (sample_cnt[buffer_idx] == 0) {
         // set metadata the first time we write to this buffer idx
         // (sample_idx corresponding to the start of the output array)
-        out_metadata[buffer_idx].sample_idx = cycle_idx * (num_cycles * num_samples);
+        out_metadata[buffer_idx].sample_idx = global_buffer_idx * (num_cycles * num_samples);
         out_metadata[buffer_idx].sample_rate_numerator = meta->sample_rate_numerator;
         out_metadata[buffer_idx].sample_rate_denominator = meta->sample_rate_denominator;
         out_metadata[buffer_idx].channel_idx = meta->channel_idx;
@@ -101,13 +109,11 @@ __global__ void place_packet_data_kernel(sample_t* out, RfMetaData* out_metadata
         received_end[buffer_idx] = true;
       }
     }
-
-    sample_idx += samples_to_write;
   }
 }
 
 void place_packet_data(sample_t* out, RfMetaData* out_metadata, void* const* const in,
-                       int* sample_cnt, bool* received_end, const size_t buffer_pos,
+                       int* sample_cnt, bool* received_end, unsigned long long int* buffer_counter,
                        const uint32_t num_pkts, const uint16_t buffer_size,
                        const uint16_t num_cycles, const uint16_t num_samples,
                        const uint16_t num_subchannels, const uint32_t max_samples_per_packet,
@@ -119,7 +125,7 @@ void place_packet_data(sample_t* out, RfMetaData* out_metadata, void* const* con
       in,
       sample_cnt,
       received_end,
-      buffer_pos,
+      buffer_counter,
       buffer_size,
       num_cycles,
       num_samples,
@@ -190,6 +196,16 @@ void AdvConnectorOpRx::initialize() {
       (max_packet_size_.get() - sizeof(RfPktHeader)) / (num_subchannels_.get() * sizeof(sample_t));
 
   HOLOSCAN_LOG_INFO("Max samples per packet: {}", max_samples_per_packet);
+
+  if (max_samples_per_packet * batch_size_.get() > (num_cycles_.get() * num_samples_.get())) {
+    HOLOSCAN_LOG_ERROR(
+        "Specified packet batch_size could fill more than one RF array, but at most one array can "
+        "be produced per compute() call. Increase total array size to at least {} * "
+        "num_subchannels samples, or decrease batch_size to at most {}",
+        max_samples_per_packet * batch_size_.get(),
+        (num_cycles_.get() * num_samples_.get()) / max_samples_per_packet);
+    exit(1);
+  }
 
   // Total number of I/Q samples per array
   samples_per_arr = num_cycles_.get() * num_samples_.get() * num_subchannels_.get();
@@ -264,9 +280,7 @@ void AdvConnectorOpRx::free_bufs_and_emit_arrays(OutputContext& op_output) {
 
   for (size_t i = 0; i < buffer_track.buffer_size; i++) {
     const size_t pos_wrap = (buffer_track.pos + i) % buffer_track.buffer_size;
-    if (!buffer_track.received_end_h[pos_wrap]) {
-      continue;
-    }
+    if (!buffer_track.received_end_h[pos_wrap]) { continue; }
 
     // Received End-of-Array (EOA) message, emit to downstream operators
     auto params = std::make_shared<RFArray>(
@@ -276,8 +290,9 @@ void AdvConnectorOpRx::free_bufs_and_emit_arrays(OutputContext& op_output) {
         proc_stream);
 
     op_output.emit(params, "rf_out");
-    HOLOSCAN_LOG_INFO("Emitting sample cycle {} with {}/{} IQ samples",
+    HOLOSCAN_LOG_INFO("Buffer {}: Emitting sample buffer {} with {}/{} IQ samples",
                       buffer_track.pos + i,
+                      buffer_track.counter_h[pos_wrap],
                       buffer_track.sample_cnt_h[pos_wrap],
                       samples_per_arr);
 
@@ -306,14 +321,6 @@ void AdvConnectorOpRx::compute(InputContext& op_input,
   }
   auto burst = burst_opt.value();
 
-  // If packets are coming in from our non-GPUDirect queue, free them and move on
-  //   if (adv_net_get_q_id(burst) == 0) {  // queue 0 is configured to be non-GPUDirect in yaml
-  //   config
-  //     adv_net_free_cpu_pkts_and_burst(burst);
-  //     HOLOSCAN_LOG_INFO("Freeing CPU packets on queue 0");
-  //     return;
-  //   }
-
   // Header data split saves off the GPU pointers into a host-pinned buffer to reassemble later.
   // Once enough packets are aggregated, a reorder kernel is launched. In CPU-only mode the
   // entire burst buffer pointer is saved and freed once an entire batch is received.
@@ -338,7 +345,7 @@ void AdvConnectorOpRx::compute(InputContext& op_input,
           HOLOSCAN_LOG_ERROR("Fell behind in processing on GPU!");
           cudaStreamSynchronize(streams_[cur_idx]);
         }
-      } while (out_q.size() == num_concurrent);
+      } while (out_q.size() >= num_concurrent);
 
       // Copy packet I/Q contents to appropriate location in 'rf_data'
       place_packet_data(rf_data.Data(),
@@ -346,7 +353,7 @@ void AdvConnectorOpRx::compute(InputContext& op_input,
                         h_dev_ptrs_[cur_idx],
                         buffer_track.sample_cnt_d,
                         buffer_track.received_end_d,
-                        buffer_track.pos,
+                        buffer_track.counter_d,
                         aggr_pkts_recv_,
                         buffer_size_.get(),
                         num_cycles_.get(),

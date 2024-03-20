@@ -26,7 +26,7 @@ scheduler:
   stop_on_deadlock_timeout: 500
 
 rx_params:
-  batch_size: 5120  # Number of packets to process at once into tensor data
+  batch_size: &batch_size 512  # Number of packets to process at once into tensor data
   max_packet_size: 9000
 
 advanced_network:
@@ -45,7 +45,7 @@ advanced_network:
             cpu_cores: "4"
             max_packet_size: 9000       # Maximum payload size
             num_concurrent_batches: 15  # Number of batches that can be used at any time
-            batch_size: 5120            # Number of packets in a batch
+            batch_size: *batch_size            # Number of packets in a batch
             output_port: "ch0"
           - name: "RF Samples Ch1"
             id: 1
@@ -55,7 +55,7 @@ advanced_network:
             cpu_cores: "5"
             max_packet_size: 9000       # Maximum payload size
             num_concurrent_batches: 15  # Number of batches that can be used at any time
-            batch_size: 5120            # Number of packets in a batch
+            batch_size: *batch_size            # Number of packets in a batch
             output_port: "ch1"
         flows:
           - name: "UDP 60000 - Ch0"

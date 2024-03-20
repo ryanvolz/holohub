@@ -83,6 +83,9 @@ class DigitalRFSinkOp : public Operator {
   Parameter<bool> checksum;
   Parameter<bool> is_continuous;
   Parameter<bool> marching_dots;
+  Parameter<uint16_t> num_cycles_;
+  Parameter<uint16_t> num_samples_;
+  Parameter<uint16_t> num_subchannels_;
 
   bool writer_initialized = false;
   hid_t hdf5_dtype = H5T_STD_I16LE;
@@ -93,6 +96,8 @@ class DigitalRFSinkOp : public Operator {
   uint64_t num_subchannels;
   std::filesystem::path channel_dir_path;
   Digital_rf_write_object* drf_writer;
+  tensor_t<sample_t, 3> rf_data;
+  tensor_t<RfMetaData, 0> rf_metadata;
 };  // DigitalRFSinkOp
 
 }  // namespace holoscan::ops

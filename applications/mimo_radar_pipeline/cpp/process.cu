@@ -117,6 +117,22 @@ void DigitalRFSinkOp::setup(OperatorSpec& spec) {
                    "Enable marching dots",
                    "Enable marching dots for every file written",
                    false);
+
+  spec.param<uint16_t>(num_cycles_,
+                       "num_cycles",
+                       "Number of cycles",
+                       "Number of cycles of num_samples to group in processing",
+                       {});
+  spec.param<uint16_t>(num_samples_,
+                       "num_samples",
+                       "Number of samples",
+                       "Number of samples per cycle to group in processing",
+                       {});
+  spec.param<uint16_t>(num_subchannels_,
+                       "num_subchannels",
+                       "Number of subchannels",
+                       "Number of IQ subchannels per sample time instance",
+                       {});
 }
 
 void DigitalRFSinkOp::initialize() {
@@ -127,6 +143,9 @@ void DigitalRFSinkOp::initialize() {
   channel_dir_path = channel_dir.get();
   std::filesystem::create_directories(channel_dir_path);
 
+  make_tensor(rf_data, {num_cycles_, num_samples_, num_subchannels_}, MATX_HOST_MEMORY);
+  make_tensor(rf_metadata, MATX_HOST_MEMORY);
+
   HOLOSCAN_LOG_INFO("DigitalRFSinkOp::initialize() done");
 }
 
@@ -136,8 +155,14 @@ void DigitalRFSinkOp::initialize() {
 void DigitalRFSinkOp::compute(InputContext& op_input, OutputContext& op_output, ExecutionContext&) {
   HOLOSCAN_LOG_INFO("DigitalRFSinkOp::compute() called");
   auto in = op_input.receive<std::shared_ptr<RFArray>>("rf_in").value();
-  auto data = in->data;
-  auto metadata = in->metadata();
+
+  // copy incoming data/metadata to host-allocated memory
+  matx::copy(rf_data, in->data, in->stream);
+  matx::copy(rf_metadata, in->metadata, in->stream);
+  cudaStreamSynchronize(in->stream);
+
+  auto data = rf_data;
+  auto metadata = rf_metadata();
 
   // initialize writer using data specifications from the first array
   if (!writer_initialized) {

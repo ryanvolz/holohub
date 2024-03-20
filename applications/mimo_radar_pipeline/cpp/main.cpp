@@ -39,10 +39,10 @@ class App : public holoscan::Application {
     auto converter1 =
         make_operator<ops::ComplexIntToFloatOp>("converter1", from_config("radar_pipeline"));
 
-    auto drf_sink0 =
-        make_operator<ops::DigitalRFSinkOp>("drf_sink0", from_config("digital_rf_ch0"));
-    auto drf_sink1 =
-        make_operator<ops::DigitalRFSinkOp>("drf_sink1", from_config("digital_rf_ch1"));
+    auto drf_sink0 = make_operator<ops::DigitalRFSinkOp>(
+        "drf_sink0", from_config("digital_rf_ch0"), from_config("radar_pipeline"));
+    auto drf_sink1 = make_operator<ops::DigitalRFSinkOp>(
+        "drf_sink1", from_config("digital_rf_ch1"), from_config("radar_pipeline"));
 
     // Network operators
     // Advanced

@@ -143,6 +143,7 @@ void DigitalRFSinkOp::initialize() {
   channel_dir_path = channel_dir.get();
   std::filesystem::create_directories(channel_dir_path);
 
+  // allocate in host memory so we can access from CPU without device synchronization
   make_tensor(rf_data, {num_cycles_, num_samples_, num_subchannels_}, MATX_HOST_MEMORY);
   make_tensor(rf_metadata, MATX_HOST_MEMORY);
 
@@ -193,14 +194,15 @@ void DigitalRFSinkOp::compute(InputContext& op_input, OutputContext& op_output, 
     writer_initialized = true;
   }
 
-  HOLOSCAN_LOG_TRACE("Writing {} samples @ {}", data.Size(0) * data.Size(1), metadata.sample_idx);
+  HOLOSCAN_LOG_INFO("Writing {} samples @ {}", data.Size(0) * data.Size(1), metadata.sample_idx);
   auto result = digital_rf_write_hdf5(
       drf_writer, metadata.sample_idx - start_idx, data.Data(), data.Size(0) * data.Size(1));
   if (result) {
-    HOLOSCAN_LOG_ERROR("Digital RF write call failed with error {}, sample_idx {}  write_len {}",
+    HOLOSCAN_LOG_ERROR("Digital RF write failed with error {}, sample_idx {}  write_len {}",
                        result,
                        metadata.sample_idx - start_idx,
                        data.Size(0) * data.Size(1));
+    exit(result);
   }
 }
 

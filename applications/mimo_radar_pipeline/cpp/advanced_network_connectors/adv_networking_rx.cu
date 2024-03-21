@@ -61,8 +61,10 @@ __global__ void place_packet_data_kernel(sample_t* out, RfMetaData* out_metadata
 
   uint64_t global_sample_idx = meta->sample_idx;
   const uint32_t pkt_samples = min(meta->pkt_samples, max_samples_per_packet);
+  const uint64_t global_stop_sample_idx = global_sample_idx + pkt_samples;
+  uint16_t pkt_iq_idx = 0;
 
-  while (global_sample_idx < meta->sample_idx + pkt_samples) {
+  while (global_sample_idx < global_stop_sample_idx) {
     // break sample index down into (buffer, cycle, sample) index
     uint64_t global_cycle_idx = global_sample_idx / num_samples;
     uint16_t sample_idx = global_sample_idx % num_samples;
@@ -70,10 +72,13 @@ __global__ void place_packet_data_kernel(sample_t* out, RfMetaData* out_metadata
     uint16_t cycle_idx = global_cycle_idx % num_cycles;
     uint16_t buffer_idx = global_buffer_idx % buffer_size;
 
-    uint32_t samples_before_cycle_wrap = (num_cycles - cycle_idx) * num_samples - sample_idx;
-    uint32_t samples_to_write = min(pkt_samples, samples_before_cycle_wrap);
+    uint32_t samples_before_next_buffer = (num_cycles - cycle_idx) * num_samples - sample_idx;
+    uint32_t samples_remaining_in_packet = global_stop_sample_idx - global_sample_idx;
+    uint32_t samples_to_write = min(samples_remaining_in_packet, samples_before_next_buffer);
 
+    // update loop counter variables here before we possibly drop samples and continue loop
     global_sample_idx += samples_to_write;
+    pkt_iq_idx += samples_to_write * num_subchannels;
 
     // Drop old samples
     if (global_buffer_idx < buffer_counter[buffer_idx]) { continue; }
@@ -84,7 +89,7 @@ __global__ void place_packet_data_kernel(sample_t* out, RfMetaData* out_metadata
 
     // Copy data
     for (uint16_t i = threadIdx.x; i < samples_to_write * num_subchannels; i += blockDim.x) {
-      out[idx_offset + i] = samples[i];
+      out[idx_offset + i] = samples[pkt_iq_idx + i];
     }
 
     if (threadIdx.x == 0) {

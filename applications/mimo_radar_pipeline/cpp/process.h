@@ -41,11 +41,10 @@ class ComplexIntToFloatOp : public Operator {
   void compute(InputContext& op_input, OutputContext& op_output, ExecutionContext&) override;
 
  private:
-  Parameter<uint16_t> num_cycles;
-  Parameter<uint16_t> num_samples;
+  Parameter<uint32_t> chunk_size;
   Parameter<uint16_t> num_subchannels;
 
-  tensor_t<complex_t, 3> complex_data;
+  tensor_t<complex_t, 2> complex_data;
 };  // ComplexIntToFloatOp
 
 template <typename sampleType>
@@ -67,6 +66,8 @@ class DigitalRFSinkOp : public Operator {
  private:
   void _h5type_initialize();
 
+  Parameter<uint32_t> chunk_size;
+  Parameter<uint16_t> num_subchannels;
   Parameter<std::string> channel_dir;
   Parameter<uint64_t> subdir_cadence_secs;
   Parameter<uint64_t> file_cadence_millisecs;
@@ -75,9 +76,6 @@ class DigitalRFSinkOp : public Operator {
   Parameter<bool> checksum;
   Parameter<bool> is_continuous;
   Parameter<bool> marching_dots;
-  Parameter<uint16_t> num_cycles_;
-  Parameter<uint16_t> num_samples_;
-  Parameter<uint16_t> num_subchannels_;
 
   bool writer_initialized = false;
   hid_t hdf5_dtype;
@@ -85,11 +83,39 @@ class DigitalRFSinkOp : public Operator {
   uint64_t start_idx;
   uint64_t sample_rate_numerator;
   uint64_t sample_rate_denominator;
-  uint64_t num_subchannels;
   std::filesystem::path channel_dir_path;
   Digital_rf_write_object* drf_writer;
-  tensor_t<sampleType, 3> rf_data;
-  tensor_t<RfMetaData, 0> rf_metadata;
+  tensor_t<sampleType, 2> rf_data;
 };  // DigitalRFSinkOp
+
+class ResamplePolyOp : public Operator {
+ public:
+  HOLOSCAN_OPERATOR_FORWARD_ARGS(ResamplePolyOp)
+
+  ResamplePolyOp() = default;
+
+  void setup(OperatorSpec& spec) override;
+  void initialize() override;
+
+  /**
+   * @brief Polyphase resampling by up/down rate
+   */
+  void compute(InputContext& op_input, OutputContext& op_output, ExecutionContext&) override;
+
+ private:
+  Parameter<uint32_t> chunk_size;
+  Parameter<uint16_t> num_subchannels;
+  Parameter<uint16_t> up;
+  Parameter<uint16_t> down;
+  Parameter<std::vector<float, std::allocator<float>>> filter_coefs;
+
+  std::shared_ptr<RFArray<complex_t>> prior_input;
+  uint32_t pad_size;
+  uint32_t out_pad_size;
+  uint32_t out_chunk_size;
+  tensor_t<float, 1> filter;
+  tensor_t<complex_t, 2> padded_out_data;
+  tensor_t<complex_t, 2> padded_data;
+};  // ResamplePolyOp
 
 }  // namespace holoscan::ops

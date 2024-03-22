@@ -26,8 +26,11 @@ scheduler:
   stop_on_deadlock_timeout: 500
 
 rx_params:
-  batch_size: &batch_size 512  # Number of packets to process at once into tensor data
-  max_packet_size: 9000
+  batch_size: &batch_size 358  # Number of packets to process at once into tensor data
+  max_packet_size: &max_packet_size 9000
+  num_subchannels: &num_subchannels 8  # Number of IQ subchannels of data that form a sample
+  num_samples: &rx_chunk_size 100000  # Number of samples to output as a single chunk, must fit one batch of packets
+  buffer_size: 10  # Number of num_samples chunks to store in the rx buffer
 
 advanced_network:
   cfg:
@@ -43,7 +46,7 @@ advanced_network:
             gpu_direct: true
             split_boundary: 42
             cpu_cores: "4"
-            max_packet_size: 9000       # Maximum payload size
+            max_packet_size: *max_packet_size       # Maximum payload size
             num_concurrent_batches: 15  # Number of batches that can be used at any time
             batch_size: *batch_size            # Number of packets in a batch
             output_port: "ch0"
@@ -53,7 +56,7 @@ advanced_network:
             gpu_direct: true
             split_boundary: 42
             cpu_cores: "5"
-            max_packet_size: 9000       # Maximum payload size
+            max_packet_size: *max_packet_size       # Maximum payload size
             num_concurrent_batches: 15  # Number of batches that can be used at any time
             batch_size: *batch_size            # Number of packets in a batch
             output_port: "ch1"
@@ -73,16 +76,26 @@ advanced_network:
               udp_src: 60001
               udp_dst: 60001
 
-radar_pipeline:
-  num_cycles: 100           # Number of cycles of num_samples to group together into an RF Array
-  num_samples: 1000         # Number of samples to group together in a cycle (e.g. waveform repeats)
-  num_subchannels: 8        # Number of subchannels for each time sample before moving to next time
-  buffer_size: 100          # Number of RF arrays to store in rx buffer
+ComplexIntToFloatOp:
+  chunk_size: *rx_chunk_size
+  num_subchannels: *num_subchannels
 
-digital_rf_ch0:
+DigitalRFSinkOp_ch0:
+  chunk_size: *rx_chunk_size
+  num_subchannels: *num_subchannels
   channel_dir: tmp_drf/ch0
   uuid: mimo_radar_pipeline_ch0
 
-digital_rf_ch1:
+DigitalRFSinkOp_ch1:
+  chunk_size: *rx_chunk_size
+  num_subchannels: *num_subchannels
   channel_dir: tmp_drf/ch1
   uuid: mimo_radar_pipeline_ch1
+
+ResamplePolyOp:
+  chunk_size: *rx_chunk_size
+  num_subchannels: *num_subchannels
+  up: 1
+  down: 10
+  # scipy.signal.firwin(99, 0.1, window=('kaiser', 7.85))
+  filter_coefs: [5.402018270663957475e-06, 1.810654753648614762e-05, 3.933078741292595702e-05, 6.827946213137680079e-05, 1.013162201633930405e-04, 1.314983338673017185e-04, 1.487208908957012043e-04, 1.406601642129410678e-04, 9.459211987684828051e-05, -1.889690670613260171e-19, -1.483045960172960185e-04, -3.470086953297613205e-04, -5.816797482999728607e-04, -8.253757481762277227e-04, -1.039114611200314155e-03, -1.174664697897913465e-03, -1.179825185764054327e-03, -1.005972792948245419e-03, -6.172075195718585610e-04, 8.519854451265160396e-19, 8.280981277684790502e-04, 1.812298036390162315e-03, 2.858545289702085334e-03, 3.836893427790595123e-03, 4.591000826282915816e-03, 4.953708109375317206e-03, 4.767760448060986977e-03, 3.909831168794715948e-03, 2.315212627357789068e-03, -2.063229529461250585e-18, -2.922583601590975685e-03, -6.234812765554473279e-03, -9.618412814499729610e-03, -1.267108965097818625e-02, -1.493545410030482599e-02, -1.593858336187054664e-02, -1.523894050816926825e-02, -1.247611215547593175e-02, -7.418014206068191708e-03, 3.341488544553389171e-18, 9.649240598501284891e-03, 2.119898760881762725e-02, 3.412732022772941437e-02, 4.775172006461014113e-02, 6.127748251775326505e-02, 7.385987097982142646e-02, 8.467423082053424088e-02, 9.298716978788142129e-02, 9.822156431373847696e-02, 1.000086304688794087e-01, 9.822156431373847696e-02, 9.298716978788142129e-02, 8.467423082053424088e-02, 7.385987097982142646e-02, 6.127748251775326505e-02, 4.775172006461014113e-02, 3.412732022772941437e-02, 2.119898760881762725e-02, 9.649240598501284891e-03, 3.341488544553389171e-18, -7.418014206068191708e-03, -1.247611215547593175e-02, -1.523894050816926825e-02, -1.593858336187054664e-02, -1.493545410030482599e-02, -1.267108965097818625e-02, -9.618412814499729610e-03, -6.234812765554473279e-03, -2.922583601590975685e-03, -2.063229529461250585e-18, 2.315212627357789068e-03, 3.909831168794715948e-03, 4.767760448060986977e-03, 4.953708109375317206e-03, 4.591000826282915816e-03, 3.836893427790595123e-03, 2.858545289702085334e-03, 1.812298036390162315e-03, 8.280981277684790502e-04, 8.519854451265160396e-19, -6.172075195718585610e-04, -1.005972792948245419e-03, -1.179825185764054327e-03, -1.174664697897913465e-03, -1.039114611200314155e-03, -8.253757481762277227e-04, -5.816797482999728607e-04, -3.470086953297613205e-04, -1.483045960172960185e-04, -1.889690670613260171e-19, 9.459211987684828051e-05, 1.406601642129410678e-04, 1.487208908957012043e-04, 1.314983338673017185e-04, 1.013162201633930405e-04, 6.827946213137680079e-05, 3.933078741292595702e-05, 1.810654753648614762e-05, 5.402018270663957475e-06]

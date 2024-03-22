@@ -59,10 +59,10 @@ struct RfMetaData {
 // Represents a single RF transmission
 template <typename sampleType>
 struct RFArray {
-  tensor_t<sampleType, 3> data;
-  tensor_t<RfMetaData, 0> metadata;
+  tensor_t<sampleType, 2> data;
+  RfMetaData metadata;
   cudaStream_t stream;
 
-  RFArray(tensor_t<sampleType, 3> _data, tensor_t<RfMetaData, 0> _metadata, cudaStream_t _stream)
+  RFArray(tensor_t<sampleType, 2> _data, RfMetaData _metadata, cudaStream_t _stream)
       : data{_data}, metadata{_metadata}, stream{_stream} {}
 };

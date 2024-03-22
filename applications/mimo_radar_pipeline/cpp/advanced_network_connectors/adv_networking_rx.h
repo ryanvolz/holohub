@@ -28,7 +28,7 @@
 // can be useful when testing, where we have a packet generator that isn't
 // transmitting data that isn't generating packets that use our data format.
 #define SPOOF_PACKET_DATA      false
-#define SPOOF_SAMPLES_PER_PKT 128  // byte count must be less than 'max_packet_size' config
+#define SPOOF_SAMPLES_PER_PKT 256  // byte count must be less than 'max_packet_size' config
 
 // Example IPV4 UDP packet using Linux headers
 struct UDPIPV4Pkt {
@@ -172,8 +172,7 @@ class AdvConnectorOpRx : public Operator {
 
   // Radar settings
   Parameter<uint16_t> buffer_size_;
-  Parameter<uint16_t> num_cycles_;
-  Parameter<uint16_t> num_samples_;
+  Parameter<uint32_t> num_samples_;
   Parameter<uint16_t> num_subchannels_;
 
   // Networking settings
@@ -212,7 +211,7 @@ class AdvConnectorOpRx : public Operator {
   uint32_t max_samples_per_packet;
   size_t samples_per_arr;
   AdvBufferTracking buffer_track;
-  tensor_t<sample_t, 4> rf_data;
+  tensor_t<sample_t, 3> rf_data;
   tensor_t<RfMetaData, 1> rf_metadata;
   cudaStream_t proc_stream;
 };  // AdvConnectorOpRx

@@ -39,13 +39,12 @@ __device__ __forceinline__ void gen_meta_from_pkt_cnt(RfPktHeader* meta, const u
 __global__ void place_packet_data_kernel(sample_t* out, RfMetaData* out_metadata,
                                          const void* const* const __restrict__ in, int* sample_cnt,
                                          bool* received_end, unsigned long long int* buffer_counter,
-                                         const uint16_t buffer_size, const uint16_t num_cycles,
-                                         const uint16_t num_samples, const uint16_t num_subchannels,
+                                         const uint16_t buffer_size, const uint32_t num_samples,
+                                         const uint16_t num_subchannels,
                                          const uint32_t max_samples_per_packet,
                                          const uint64_t total_pkts) {
   const uint32_t sample_stride = static_cast<uint32_t>(num_subchannels);
-  const uint32_t cycle_stride = sample_stride * num_samples;
-  const uint32_t buffer_stride = cycle_stride * num_cycles;
+  const uint32_t buffer_stride = sample_stride * num_samples;
   const uint32_t pkt_idx = blockIdx.x;
 
 #if SPOOF_PACKET_DATA
@@ -65,64 +64,61 @@ __global__ void place_packet_data_kernel(sample_t* out, RfMetaData* out_metadata
   uint16_t pkt_iq_idx = 0;
 
   while (global_sample_idx < global_stop_sample_idx) {
-    // break sample index down into (buffer, cycle, sample) index
-    uint64_t global_cycle_idx = global_sample_idx / num_samples;
-    uint16_t sample_idx = global_sample_idx % num_samples;
-    unsigned long long int global_buffer_idx = global_cycle_idx / num_cycles;
-    uint16_t cycle_idx = global_cycle_idx % num_cycles;
+    // break sample index down into (buffer, sample) index
+    unsigned long long int global_buffer_idx = global_sample_idx / num_samples;
+    uint32_t sample_idx = global_sample_idx % num_samples;
     uint16_t buffer_idx = global_buffer_idx % buffer_size;
 
-    uint32_t samples_before_next_buffer = (num_cycles - cycle_idx) * num_samples - sample_idx;
+    uint32_t samples_before_next_buffer = num_samples - sample_idx;
     uint32_t samples_remaining_in_packet = global_stop_sample_idx - global_sample_idx;
     uint32_t samples_to_write = min(samples_remaining_in_packet, samples_before_next_buffer);
 
-    // update loop counter variables here before we possibly drop samples and continue loop
+    // Write samples only if they are not old
+    if (global_buffer_idx >= buffer_counter[buffer_idx]) {
+      // Compute pointer in buffer memory
+      uint32_t idx_offset = sample_idx * sample_stride + buffer_idx * buffer_stride;
+
+      // Copy data
+      for (uint32_t i = threadIdx.x; i < samples_to_write * num_subchannels; i += blockDim.x) {
+        out[idx_offset + i] = samples[pkt_iq_idx + i];
+      }
+
+      if (threadIdx.x == 0) {
+        if (atomicExch(&buffer_counter[buffer_idx], global_buffer_idx) != global_buffer_idx) {
+          // reset the buffer metadata for the current cycle
+          sample_cnt[buffer_idx] = 0;
+          received_end[buffer_idx] = 0;
+        }
+        if (sample_cnt[buffer_idx] == 0) {
+          // set metadata the first time we write to this buffer idx
+          // (sample_idx corresponding to the start of the output array)
+          out_metadata[buffer_idx].sample_idx = global_buffer_idx * num_samples;
+          out_metadata[buffer_idx].sample_rate_numerator = meta->sample_rate_numerator;
+          out_metadata[buffer_idx].sample_rate_denominator = meta->sample_rate_denominator;
+          out_metadata[buffer_idx].channel_idx = meta->channel_idx;
+        }
+
+        // todo Smarter way than atomicAdd
+        atomicAdd(&sample_cnt[buffer_idx], samples_to_write * num_subchannels);
+
+        if (sample_cnt[buffer_idx] >= num_subchannels * num_samples) {
+          received_end[buffer_idx] = true;
+        }
+      }
+    }
+
+    // update loop counter variables regardless
     global_sample_idx += samples_to_write;
     pkt_iq_idx += samples_to_write * num_subchannels;
-
-    // Drop old samples
-    if (global_buffer_idx < buffer_counter[buffer_idx]) { continue; }
-
-    // Compute pointer in buffer memory
-    uint32_t idx_offset =
-        sample_idx * sample_stride + cycle_idx * cycle_stride + buffer_idx * buffer_stride;
-
-    // Copy data
-    for (uint16_t i = threadIdx.x; i < samples_to_write * num_subchannels; i += blockDim.x) {
-      out[idx_offset + i] = samples[pkt_iq_idx + i];
-    }
-
-    if (threadIdx.x == 0) {
-      if (atomicExch(&buffer_counter[buffer_idx], global_buffer_idx) != global_buffer_idx) {
-        // reset the buffer metadata for the current cycle
-        sample_cnt[buffer_idx] = 0;
-        received_end[buffer_idx] = 0;
-      }
-      if (sample_cnt[buffer_idx] == 0) {
-        // set metadata the first time we write to this buffer idx
-        // (sample_idx corresponding to the start of the output array)
-        out_metadata[buffer_idx].sample_idx = global_buffer_idx * (num_cycles * num_samples);
-        out_metadata[buffer_idx].sample_rate_numerator = meta->sample_rate_numerator;
-        out_metadata[buffer_idx].sample_rate_denominator = meta->sample_rate_denominator;
-        out_metadata[buffer_idx].channel_idx = meta->channel_idx;
-      }
-
-      // todo Smarter way than atomicAdd
-      atomicAdd(&sample_cnt[buffer_idx], samples_to_write * num_subchannels);
-
-      if (sample_cnt[buffer_idx] >= num_subchannels * num_samples * num_cycles) {
-        received_end[buffer_idx] = true;
-      }
-    }
   }
 }
 
 void place_packet_data(sample_t* out, RfMetaData* out_metadata, void* const* const in,
                        int* sample_cnt, bool* received_end, unsigned long long int* buffer_counter,
                        const uint32_t num_pkts, const uint16_t buffer_size,
-                       const uint16_t num_cycles, const uint16_t num_samples,
-                       const uint16_t num_subchannels, const uint32_t max_samples_per_packet,
-                       const uint64_t total_pkts, cudaStream_t stream) {
+                       const uint32_t num_samples, const uint16_t num_subchannels,
+                       const uint32_t max_samples_per_packet, const uint64_t total_pkts,
+                       cudaStream_t stream) {
   // Each block processes an individual packet
   place_packet_data_kernel<<<num_pkts, 128, buffer_size * sizeof(int), stream>>>(
       out,
@@ -132,7 +128,6 @@ void place_packet_data(sample_t* out, RfMetaData* out_metadata, void* const* con
       received_end,
       buffer_counter,
       buffer_size,
-      num_cycles,
       num_samples,
       num_subchannels,
       max_samples_per_packet,
@@ -149,18 +144,10 @@ void AdvConnectorOpRx::setup(OperatorSpec& spec) {
   spec.param<uint16_t>(buffer_size_,
                        "buffer_size",
                        "Size of RF buffer",
-                       "Max number of num_cycles batches that can be held at once",
+                       "Max number of num_samples batches that can be held at once",
                        {});
-  spec.param<uint16_t>(num_cycles_,
-                       "num_cycles",
-                       "Number of cycles",
-                       "Number of cycles of num_samples to group in processing",
-                       {});
-  spec.param<uint16_t>(num_samples_,
-                       "num_samples",
-                       "Number of samples",
-                       "Number of samples per cycle to group in processing",
-                       {});
+  spec.param<uint32_t>(
+      num_samples_, "num_samples", "Number of samples", "Number of samples per output chunk", {});
   spec.param<uint16_t>(num_subchannels_,
                        "num_subchannels",
                        "Number of subchannels",
@@ -202,18 +189,18 @@ void AdvConnectorOpRx::initialize() {
 
   HOLOSCAN_LOG_INFO("Max samples per packet: {}", max_samples_per_packet);
 
-  if (max_samples_per_packet * batch_size_.get() > (num_cycles_.get() * num_samples_.get())) {
+  if (max_samples_per_packet * batch_size_.get() > num_samples_.get()) {
     HOLOSCAN_LOG_ERROR(
         "Specified packet batch_size could fill more than one RF array, but at most one array can "
-        "be produced per compute() call. Increase total array size to at least {} * "
-        "num_subchannels samples, or decrease batch_size to at most {}",
+        "be produced per compute() call. Increase num_samples to at least {}, or decrease "
+        "batch_size to at most {}",
         max_samples_per_packet * batch_size_.get(),
-        (num_cycles_.get() * num_samples_.get()) / max_samples_per_packet);
+        num_samples_.get() / max_samples_per_packet);
     exit(1);
   }
 
   // Total number of I/Q samples per array
-  samples_per_arr = num_cycles_.get() * num_samples_.get() * num_subchannels_.get();
+  samples_per_arr = num_samples_.get() * num_subchannels_.get();
 
   // Configuration checks
   if (!(use_hds_.get() && gpu_direct_.get())) {
@@ -235,8 +222,7 @@ void AdvConnectorOpRx::initialize() {
   }
 
   buffer_track = AdvBufferTracking(buffer_size_.get());
-  make_tensor(rf_data,
-              {buffer_size_.get(), num_cycles_.get(), num_samples_.get(), num_subchannels_.get()});
+  make_tensor(rf_data, {buffer_size_.get(), num_samples_.get(), num_subchannels_.get()});
   make_tensor(rf_metadata, {buffer_size_.get()});
 
 #if SPOOF_PACKET_DATA
@@ -244,7 +230,7 @@ void AdvConnectorOpRx::initialize() {
   const size_t spoof_pkt_size =
       sizeof(sample_t) * num_subchannels_.get() * SPOOF_SAMPLES_PER_PKT + sizeof(RfPktHeader);
   HOLOSCAN_LOG_WARN("Spoofing packet metadata, ignoring packet header.");
-  if (spoof_pkt_size >= max_packet_size_.get()) {
+  if (spoof_pkt_size > max_packet_size_.get()) {
     HOLOSCAN_LOG_ERROR("Max packets size ({}) can't fit the expected samples ({})",
       max_packet_size_.get(), SPOOF_SAMPLES_PER_PKT);
     exit(1);
@@ -288,10 +274,15 @@ void AdvConnectorOpRx::free_bufs_and_emit_arrays(OutputContext& op_output) {
     if (!buffer_track.received_end_h[pos_wrap]) { continue; }
 
     // Received End-of-Array (EOA) message, emit to downstream operators
+    auto out_metadata_tensor = make_tensor<RfMetaData>({}, MATX_HOST_MEMORY);
+    matx::copy(out_metadata_tensor,
+               rf_metadata.Slice<0>({static_cast<index_t>(pos_wrap)}, {matxDropDim}),
+               stream);
+    cudaStreamSynchronize(stream);
+    auto out_metadata = out_metadata_tensor();
     auto params = std::make_shared<RFArray<sample_t>>(
-        rf_data.Slice<3>({static_cast<index_t>(pos_wrap), 0, 0, 0},
-                         {matxDropDim, matxEnd, matxEnd, matxEnd}),
-        rf_metadata.Slice<0>({static_cast<index_t>(pos_wrap)}, {matxDropDim}),
+        rf_data.Slice<2>({static_cast<index_t>(pos_wrap), 0, 0}, {matxDropDim, matxEnd, matxEnd}),
+        out_metadata,
         proc_stream);
 
     op_output.emit(params, "rf_out");
@@ -361,7 +352,6 @@ void AdvConnectorOpRx::compute(InputContext& op_input,
                         buffer_track.counter_d,
                         aggr_pkts_recv_,
                         buffer_size_.get(),
-                        num_cycles_.get(),
                         num_samples_.get(),
                         num_subchannels_.get(),
                         max_samples_per_packet,

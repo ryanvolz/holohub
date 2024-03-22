@@ -31,17 +31,15 @@ class App : public holoscan::Application {
     using namespace holoscan;
     HOLOSCAN_LOG_INFO("Initializing radar pipeline as data processor");
 
-    auto rx = make_operator<ops::PingRxOp>("rx");
-
     // Radar algorithms
     auto converter0 =
         make_operator<ops::ComplexIntToFloatOp>("converter0", from_config("radar_pipeline"));
     auto converter1 =
         make_operator<ops::ComplexIntToFloatOp>("converter1", from_config("radar_pipeline"));
 
-    auto drf_sink0 = make_operator<ops::DigitalRFSinkOp>(
+    auto drf_sink0 = make_operator<ops::DigitalRFSinkOp<sample_t>>(
         "drf_sink0", from_config("digital_rf_ch0"), from_config("radar_pipeline"));
-    auto drf_sink1 = make_operator<ops::DigitalRFSinkOp>(
+    auto drf_sink1 = make_operator<ops::DigitalRFSinkOp<sample_t>>(
         "drf_sink1", from_config("digital_rf_ch1"), from_config("radar_pipeline"));
 
     // Network operators
@@ -56,12 +54,12 @@ class App : public holoscan::Application {
         "adv_connector_rx1", from_config("rx_params"), from_config("radar_pipeline"));
 
     add_flow(adv_net_rx, adv_rx_pkt0, {{"ch0", "burst_in"}});
-    add_flow(adv_rx_pkt0, converter0, {{"rf_out", "rf_in"}});
-    add_flow(converter0, rx);
+    // add_flow(adv_rx_pkt0, converter0, {{"rf_out", "rf_in"}});
+    // add_flow(converter0, drf_sink0);
 
     add_flow(adv_net_rx, adv_rx_pkt1, {{"ch1", "burst_in"}});
-    add_flow(adv_rx_pkt1, converter1, {{"rf_out", "rf_in"}});
-    add_flow(converter1, rx);
+    // add_flow(adv_rx_pkt1, converter1, {{"rf_out", "rf_in"}});
+    // add_flow(converter1, drf_sink1);
 
     add_flow(adv_rx_pkt0, drf_sink0);
     add_flow(adv_rx_pkt1, drf_sink1);

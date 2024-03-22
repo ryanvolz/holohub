@@ -143,7 +143,7 @@ namespace holoscan::ops {
 
 void AdvConnectorOpRx::setup(OperatorSpec& spec) {
   spec.input<std::shared_ptr<AdvNetBurstParams>>("burst_in");
-  spec.output<std::shared_ptr<RFArray>>("rf_out");
+  spec.output<std::shared_ptr<RFArray<sample_t>>>("rf_out");
 
   // Radar settings
   spec.param<uint16_t>(buffer_size_,
@@ -288,7 +288,7 @@ void AdvConnectorOpRx::free_bufs_and_emit_arrays(OutputContext& op_output) {
     if (!buffer_track.received_end_h[pos_wrap]) { continue; }
 
     // Received End-of-Array (EOA) message, emit to downstream operators
-    auto params = std::make_shared<RFArray>(
+    auto params = std::make_shared<RFArray<sample_t>>(
         rf_data.Slice<3>({static_cast<index_t>(pos_wrap), 0, 0, 0},
                          {matxDropDim, matxEnd, matxEnd, matxEnd}),
         rf_metadata.Slice<0>({static_cast<index_t>(pos_wrap)}, {matxDropDim}),

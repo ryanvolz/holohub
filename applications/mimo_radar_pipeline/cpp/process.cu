@@ -25,8 +25,8 @@ namespace holoscan::ops {
 
 // ----- ComplexIntToFloatOp ---------------------------------------------------
 void ComplexIntToFloatOp::setup(OperatorSpec& spec) {
-  spec.input<std::shared_ptr<RFArray>>("rf_in");
-  spec.output<std::shared_ptr<ComplexRFArray>>("rf_out");
+  spec.input<std::shared_ptr<RFArray<sample_t>>>("rf_in");
+  spec.output<std::shared_ptr<RFArray<complex_t>>>("rf_out");
   spec.param<uint16_t>(num_cycles,
                        "num_cycles",
                        "Number of cycles",
@@ -59,7 +59,7 @@ void ComplexIntToFloatOp::initialize() {
 void ComplexIntToFloatOp::compute(InputContext& op_input, OutputContext& op_output,
                                   ExecutionContext&) {
   HOLOSCAN_LOG_INFO("ComplexIntToFloatOp::compute() called");
-  auto in = op_input.receive<std::shared_ptr<RFArray>>("rf_in").value();
+  auto in = op_input.receive<std::shared_ptr<RFArray<sample_t>>>("rf_in").value();
   cudaStream_t stream = in->stream;
 
   HOLOSCAN_LOG_INFO("Dim: {}, {}, {}", in->data.Size(0), in->data.Size(1), in->data.Size(2));
@@ -77,13 +77,14 @@ void ComplexIntToFloatOp::compute(InputContext& op_input, OutputContext& op_outp
        matx::slice(in_data_float, {0, 0, 1}, {matxEnd, matxEnd, matxEnd}, {1, 1, 2}))
       .run(stream);
 
-  auto params = std::make_shared<ComplexRFArray>(complex_data, in->metadata, stream);
+  auto params = std::make_shared<RFArray<complex_t>>(complex_data, in->metadata, stream);
   op_output.emit(params, "rf_out");
 }
 
 // ----- DigitalRFSinkOp ---------------------------------------------------
-void DigitalRFSinkOp::setup(OperatorSpec& spec) {
-  spec.input<std::shared_ptr<RFArray>>("rf_in");
+template <typename sampleType>
+void DigitalRFSinkOp<sampleType>::setup(OperatorSpec& spec) {
+  spec.input<std::shared_ptr<RFArray<sampleType>>>("rf_in");
   spec.param<std::string>(channel_dir,
                           "channel_dir",
                           "Channel directory",
@@ -135,9 +136,24 @@ void DigitalRFSinkOp::setup(OperatorSpec& spec) {
                        {});
 }
 
-void DigitalRFSinkOp::initialize() {
+template <>
+void DigitalRFSinkOp<complex_int_type>::_h5type_initialize() {
+  hdf5_dtype = H5T_STD_I16LE;
+  is_complex = true;
+}
+
+template <>
+void DigitalRFSinkOp<cuda::std::complex<float>>::_h5type_initialize() {
+  hdf5_dtype = H5T_NATIVE_FLOAT;
+  is_complex = true;
+}
+
+template <typename sampleType>
+void DigitalRFSinkOp<sampleType>::initialize() {
   HOLOSCAN_LOG_INFO("DigitalRFSinkOp::initialize()");
   holoscan::Operator::initialize();
+
+  _h5type_initialize();
 
   // make sure the channel directory exists
   channel_dir_path = channel_dir.get();
@@ -153,9 +169,11 @@ void DigitalRFSinkOp::initialize() {
 /**
  * @brief  Write the RF input to files in Digital RF format
  */
-void DigitalRFSinkOp::compute(InputContext& op_input, OutputContext& op_output, ExecutionContext&) {
+template <typename sampleType>
+void DigitalRFSinkOp<sampleType>::compute(InputContext& op_input, OutputContext& op_output,
+                                          ExecutionContext&) {
   HOLOSCAN_LOG_INFO("DigitalRFSinkOp::compute() called");
-  auto in = op_input.receive<std::shared_ptr<RFArray>>("rf_in").value();
+  auto in = op_input.receive<std::shared_ptr<RFArray<sampleType>>>("rf_in").value();
 
   // copy incoming data/metadata to host-allocated memory
   matx::copy(rf_data, in->data, in->stream);
@@ -206,11 +224,15 @@ void DigitalRFSinkOp::compute(InputContext& op_input, OutputContext& op_output, 
   }
 }
 
-void DigitalRFSinkOp::stop() {
+template <typename sampleType>
+void DigitalRFSinkOp<sampleType>::stop() {
   // clean up digital RF writer object
   auto result = digital_rf_close_write_hdf5(drf_writer);
   if (result) { HOLOSCAN_LOG_ERROR("Failed to close Digital RF writer with error {}", result); }
   writer_initialized = false;
 }
+
+template class DigitalRFSinkOp<complex_int_type>;
+template class DigitalRFSinkOp<complex_t>;
 
 }  // namespace holoscan::ops

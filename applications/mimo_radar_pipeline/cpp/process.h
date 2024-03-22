@@ -23,17 +23,6 @@
 
 #include "common.h"
 
-// ---------- Structures ----------
-struct ComplexRFArray {
-  tensor_t<complex_t, 3> data;
-  tensor_t<RfMetaData, 0> metadata;
-  cudaStream_t stream;
-
-  ComplexRFArray(tensor_t<complex_t, 3> _data, tensor_t<RfMetaData, 0> _metadata,
-                 cudaStream_t _stream)
-      : data{_data}, metadata{_metadata}, stream{_stream} {}
-};
-
 // ---------- Operators ----------
 namespace holoscan::ops {
 
@@ -59,6 +48,7 @@ class ComplexIntToFloatOp : public Operator {
   tensor_t<complex_t, 3> complex_data;
 };  // ComplexIntToFloatOp
 
+template <typename sampleType>
 class DigitalRFSinkOp : public Operator {
  public:
   HOLOSCAN_OPERATOR_FORWARD_ARGS(DigitalRFSinkOp)
@@ -75,6 +65,8 @@ class DigitalRFSinkOp : public Operator {
   void stop() override;
 
  private:
+  void _h5type_initialize();
+
   Parameter<std::string> channel_dir;
   Parameter<uint64_t> subdir_cadence_secs;
   Parameter<uint64_t> file_cadence_millisecs;
@@ -88,15 +80,15 @@ class DigitalRFSinkOp : public Operator {
   Parameter<uint16_t> num_subchannels_;
 
   bool writer_initialized = false;
-  hid_t hdf5_dtype = H5T_STD_I16LE;
-  bool is_complex = true;
+  hid_t hdf5_dtype;
+  bool is_complex;
   uint64_t start_idx;
   uint64_t sample_rate_numerator;
   uint64_t sample_rate_denominator;
   uint64_t num_subchannels;
   std::filesystem::path channel_dir_path;
   Digital_rf_write_object* drf_writer;
-  tensor_t<sample_t, 3> rf_data;
+  tensor_t<sampleType, 3> rf_data;
   tensor_t<RfMetaData, 0> rf_metadata;
 };  // DigitalRFSinkOp
 

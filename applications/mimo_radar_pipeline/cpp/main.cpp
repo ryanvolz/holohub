@@ -32,13 +32,11 @@ class App : public holoscan::Application {
     HOLOSCAN_LOG_INFO("Initializing radar pipeline as data processor");
 
     // Radar algorithms
-    auto converter0 =
-        make_operator<ops::ComplexIntToFloatOp>("converter0", from_config("ComplexIntToFloatOp"));
-    auto converter1 =
-        make_operator<ops::ComplexIntToFloatOp>("converter1", from_config("ComplexIntToFloatOp"));
+    auto converter0 = make_operator<ops::ComplexIntToFloatOp>("converter0");
+    auto converter1 = make_operator<ops::ComplexIntToFloatOp>("converter1");
 
-    auto resample0 = make_operator<ops::ResamplePolyOp>("resmple0", from_config("ResamplePolyOp"));
-    auto resample1 = make_operator<ops::ResamplePolyOp>("resmple1", from_config("ResamplePolyOp"));
+    auto resample0 = make_operator<ops::ResamplePolyOp>("resample0", from_config("ResamplePolyOp"));
+    auto resample1 = make_operator<ops::ResamplePolyOp>("resample1", from_config("ResamplePolyOp"));
 
     auto drf_sink0 = make_operator<ops::DigitalRFSinkOp<sample_t>>(
         "drf_sink0", from_config("DigitalRFSinkOp_ch0"));

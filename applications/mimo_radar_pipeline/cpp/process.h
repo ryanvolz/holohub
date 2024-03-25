@@ -39,12 +39,6 @@ class ComplexIntToFloatOp : public Operator {
    * @brief Convert complex integer representation to floating point
    */
   void compute(InputContext& op_input, OutputContext& op_output, ExecutionContext&) override;
-
- private:
-  Parameter<uint32_t> chunk_size;
-  Parameter<uint16_t> num_subchannels;
-
-  tensor_t<complex_t, 2> complex_data;
 };  // ComplexIntToFloatOp
 
 template <typename sampleType>

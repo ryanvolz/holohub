@@ -27,20 +27,11 @@ namespace holoscan::ops {
 void ComplexIntToFloatOp::setup(OperatorSpec& spec) {
   spec.input<std::shared_ptr<RFArray<sample_t>>>("rf_in");
   spec.output<std::shared_ptr<RFArray<complex_t>>>("rf_out");
-  spec.param<uint32_t>(
-      chunk_size, "chunk_size", "Chunk size", "Number of samples to operate on in one chunk", {});
-  spec.param<uint16_t>(num_subchannels,
-                       "num_subchannels",
-                       "Number of subchannels",
-                       "Number of IQ subchannels per sample time instance",
-                       {});
 }
 
 void ComplexIntToFloatOp::initialize() {
   HOLOSCAN_LOG_INFO("ComplexIntToFloatOp::initialize()");
   holoscan::Operator::initialize();
-
-  make_tensor(complex_data, {chunk_size.get(), num_subchannels.get()});
 
   HOLOSCAN_LOG_INFO("ComplexIntToFloatOp::initialize() done");
 }
@@ -62,6 +53,8 @@ void ComplexIntToFloatOp::compute(InputContext& op_input, OutputContext& op_outp
   auto in_data_float_view = in->data.View<real_t, 2, typeof(new_shp)>(std::move(new_shp));
   auto in_data_float =
       matx::as_float(in_data_float_view) / (std::numeric_limits<real_t>::max() - 1);
+
+  auto complex_data = make_tensor<complex_t>(in->data.Shape(), MATX_ASYNC_DEVICE_MEMORY, stream);
   auto out_real = complex_data.RealView();
   auto out_imag = complex_data.ImagView();
   (out_real = matx::slice(in_data_float, {0, 0}, {matxEnd, matxEnd}, {1, 2})).run(stream);

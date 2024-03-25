@@ -76,10 +76,6 @@ advanced_network:
               udp_src: 60001
               udp_dst: 60001
 
-ComplexIntToFloatOp:
-  chunk_size: *rx_chunk_size
-  num_subchannels: *num_subchannels
-
 DigitalRFSinkOp_ch0:
   chunk_size: *rx_chunk_size
   num_subchannels: *num_subchannels

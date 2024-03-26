@@ -1,0 +1,42 @@
+{
+  "application": {
+    "name": "MIMO Radar Pipeline",
+    "authors": [
+      {
+        "name": "Ryan Volz",
+        "affiliation": "MIT Haystack Observatory"
+      }
+    ],
+    "language": "C++",
+    "version": "1.0",
+    "changelog": {
+      "1.0": "Initial Release"
+    },
+    "holoscan_sdk": {
+      "minimum_required_version": "0.6.0",
+      "tested_versions": ["0.6.0"]
+    },
+    "platforms": ["amd64", "arm64"],
+    "tags": ["Networking", "Network", "UDP", "IP", "Signal Processing", "RADAR"],
+    "ranking": 2,
+    "dependencies": {
+      "operators": [
+        {
+          "name": "advanced_network",
+          "version": "1.2"
+        }
+      ],
+      "libraries": [
+        {
+          "name": "MatX",
+          "version": "0.7.0",
+          "url": "https://github.com/NVIDIA/MatX.git"
+        }
+      ]
+    },
+    "run": {
+      "command": "<holohub_app_bin>/mimo_radar_pipeline",
+      "workdir": "holohub_bin"
+    }
+  }
+}

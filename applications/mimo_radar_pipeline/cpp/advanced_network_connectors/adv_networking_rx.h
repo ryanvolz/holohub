@@ -28,7 +28,7 @@
 // can be useful when testing, where we have a packet generator that isn't
 // transmitting data that isn't generating packets that use our data format.
 #define SPOOF_PACKET_DATA      false
-#define SPOOF_SAMPLES_PER_PKT 256  // byte count must be less than 'max_packet_size' config
+#define SPOOF_SAMPLES_PER_PKT 128  // byte count must be less than 'max_packet_size' config
 
 // Example IPV4 UDP packet using Linux headers
 struct UDPIPV4Pkt {

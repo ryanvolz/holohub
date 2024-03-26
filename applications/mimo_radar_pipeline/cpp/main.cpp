@@ -31,20 +31,6 @@ class App : public holoscan::Application {
     using namespace holoscan;
     HOLOSCAN_LOG_INFO("Initializing radar pipeline as data processor");
 
-    // Radar algorithms
-    auto converter0 = make_operator<ops::ComplexIntToFloatOp>("converter0");
-    auto converter1 = make_operator<ops::ComplexIntToFloatOp>("converter1");
-
-    auto resample0 = make_operator<ops::ResamplePolyOp>("resample0", from_config("ResamplePolyOp"));
-    auto resample1 = make_operator<ops::ResamplePolyOp>("resample1", from_config("ResamplePolyOp"));
-
-    auto drf_sink0 = make_operator<ops::DigitalRFSinkOp<sample_t>>(
-        "drf_sink0", from_config("DigitalRFSinkOp_ch0"));
-    auto drf_sink1 = make_operator<ops::DigitalRFSinkOp<sample_t>>(
-        "drf_sink1", from_config("DigitalRFSinkOp_ch1"));
-
-    // Network operators
-    // Advanced
     auto adv_net_rx =
         make_operator<ops::AdvNetworkOpRx>("adv_network_rx",
                                            from_config("advanced_network"),
@@ -54,18 +40,28 @@ class App : public holoscan::Application {
     auto adv_rx_pkt1 =
         make_operator<ops::AdvConnectorOpRx>("adv_connector_rx1", from_config("rx_params"));
 
-    add_flow(adv_net_rx, adv_rx_pkt0, {{"ch0", "burst_in"}});
-    // add_flow(adv_rx_pkt0, converter0, {{"rf_out", "rf_in"}});
+    // auto converter0 = make_operator<ops::ComplexIntToFloatOp>("converter0");
+    auto converter1 = make_operator<ops::ComplexIntToFloatOp>("converter1");
+
+    // auto resample0 = make_operator<ops::ResamplePolyOp>("resample0",
+    // from_config("ResamplePolyOp"));
+    auto resample1 = make_operator<ops::ResamplePolyOp>("resample1", from_config("ResamplePolyOp"));
+
+    auto drf_sink0 = make_operator<ops::DigitalRFSinkOp<sample_t>>(
+        "drf_sink0", from_config("DigitalRFSinkOp_emvsis"));
+    auto drf_sink1 = make_operator<ops::DigitalRFSinkOp<complex_t>>(
+        "drf_sink1", from_config("DigitalRFSinkOp_zephyr"));
+
+    add_flow(adv_net_rx, adv_rx_pkt0, {{"ch1", "burst_in"}});
+    // add_flow(adv_rx_pkt0, converter0);
     // add_flow(converter0, resample0);
     // add_flow(resample0, drf_sink0);
-
-    add_flow(adv_net_rx, adv_rx_pkt1, {{"ch1", "burst_in"}});
-    // add_flow(adv_rx_pkt1, converter1, {{"rf_out", "rf_in"}});
-    // add_flow(converter1, resample1);
-    // add_flow(resample1, drf_sink1);
-
     add_flow(adv_rx_pkt0, drf_sink0);
-    add_flow(adv_rx_pkt1, drf_sink1);
+
+    add_flow(adv_net_rx, adv_rx_pkt1, {{"ch0", "burst_in"}});
+    add_flow(adv_rx_pkt1, converter1);
+    add_flow(converter1, resample1);
+    add_flow(resample1, drf_sink1);
   }
 
  public:

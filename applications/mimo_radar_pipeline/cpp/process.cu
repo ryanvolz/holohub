@@ -148,6 +148,15 @@ void DigitalRFSinkOp<sampleType>::compute(InputContext& op_input, OutputContext&
   HOLOSCAN_LOG_INFO("DigitalRFSinkOp::compute() called");
   auto in = op_input.receive<std::shared_ptr<RFArray<sampleType>>>("rf_in").value();
 
+  if (rf_data.Shape() != in->data.Shape()) {
+    HOLOSCAN_LOG_ERROR(
+        "Incoming array shape ({}, {}) does not equal config-specified shape ({}, {})",
+        in->data.Size(0),
+        in->data.Size(1),
+        rf_data.Size(0),
+        rf_data.Size(1));
+  }
+
   // copy incoming data/metadata to host-allocated memory
   matx::copy(rf_data, in->data, in->stream);
   cudaStreamSynchronize(in->stream);

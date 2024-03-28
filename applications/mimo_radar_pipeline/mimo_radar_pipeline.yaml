@@ -76,9 +76,12 @@ advanced_network:
               udp_src: 60000
               udp_dst: 60001
 
+SubchannelSelectOp:
+  subchannel_idx: [0, 1, 2, 3, 4, 5]
+
 ResamplePolyOp:
   chunk_size: *rx_chunk_size
-  num_subchannels: *num_subchannels
+  num_subchannels: &num_subchannels_kept 6
   up: 1
   down: 10
   # scipy.signal.firwin(499, 0.09, window=('kaiser', 7.74))
@@ -86,12 +89,12 @@ ResamplePolyOp:
 
 DigitalRFSinkOp_emvsis:
   chunk_size: *rx_chunk_size
-  num_subchannels: *num_subchannels
+  num_subchannels: *num_subchannels_kept
   channel_dir: /data/ringbuffer/emvsis
   uuid: mimo_radar_pipeline_emvsis
 
 DigitalRFSinkOp_zephyr:
   chunk_size: &dec_chunk_size 200000
-  num_subchannels: *num_subchannels
+  num_subchannels: *num_subchannels_kept
   channel_dir: /data/ringbuffer/zephyr
   uuid: mimo_radar_pipeline_zephyr

@@ -23,6 +23,56 @@
 
 namespace holoscan::ops {
 
+// ----- SubchannelSelectOp ---------------------------------------------------
+template <typename sampleType>
+void SubchannelSelectOp<sampleType>::setup(OperatorSpec& spec) {
+  spec.input<std::shared_ptr<RFArray<sampleType>>>("rf_in");
+  spec.output<std::shared_ptr<RFArray<sampleType>>>("rf_out");
+
+  spec.param<std::vector<int, std::allocator<int>>>(
+      subchannel_idx,
+      "subchannel_idx",
+      "Subchannel selection index",
+      "Vector of subchannel indices to keep in the RFArray",
+      {});
+}
+
+template <typename sampleType>
+void SubchannelSelectOp<sampleType>::initialize() {
+  HOLOSCAN_LOG_INFO("SubchannelSelectOp::initialize()");
+  holoscan::Operator::initialize();
+
+  idx_len = subchannel_idx.get().size();
+  make_tensor(subchannel_idx_tensor, {idx_len});
+  cudaMemcpy(subchannel_idx_tensor.Data(),
+             subchannel_idx.get().data(),
+             idx_len * sizeof(int),
+             cudaMemcpyDefault);
+
+  HOLOSCAN_LOG_INFO("SubchannelSelectOp::initialize() done");
+}
+
+template class SubchannelSelectOp<complex_int_type>;
+template class SubchannelSelectOp<complex_t>;
+
+/**
+ * @brief Select RFArray subchannels to keep
+ */
+template <typename sampleType>
+void SubchannelSelectOp<sampleType>::compute(InputContext& op_input, OutputContext& op_output,
+                                             ExecutionContext&) {
+  HOLOSCAN_LOG_INFO("SubchannelSelectOp::compute() called");
+  auto in = op_input.receive<std::shared_ptr<RFArray<sampleType>>>("rf_in").value();
+  cudaStream_t stream = in->stream;
+
+  auto out_tensor =
+      make_tensor<sampleType>({in->data.Size(0), idx_len}, MATX_ASYNC_DEVICE_MEMORY, stream);
+  (out_tensor = remap<1>(in->data, subchannel_idx_tensor)).run(stream);
+
+  auto params = std::make_shared<RFArray<sampleType>>(out_tensor, in->metadata, stream);
+  op_output.emit(params, "rf_out");
+}
+
 // ----- ComplexIntToFloatOp ---------------------------------------------------
 void ComplexIntToFloatOp::setup(OperatorSpec& spec) {
   spec.input<std::shared_ptr<RFArray<sample_t>>>("rf_in");

@@ -26,6 +26,28 @@
 // ---------- Operators ----------
 namespace holoscan::ops {
 
+template <typename sampleType>
+class SubchannelSelectOp : public Operator {
+ public:
+  HOLOSCAN_OPERATOR_FORWARD_ARGS(SubchannelSelectOp)
+
+  SubchannelSelectOp() = default;
+
+  void setup(OperatorSpec& spec) override;
+  void initialize() override;
+
+  /**
+   * @brief Select RFArray subchannels to keep
+   */
+  void compute(InputContext& op_input, OutputContext& op_output, ExecutionContext&) override;
+
+ private:
+  Parameter<std::vector<int, std::allocator<int>>> subchannel_idx;
+
+  uint32_t idx_len;
+  tensor_t<int, 1> subchannel_idx_tensor;
+};  // SubchannelSelectOp
+
 class ComplexIntToFloatOp : public Operator {
  public:
   HOLOSCAN_OPERATOR_FORWARD_ARGS(ComplexIntToFloatOp)

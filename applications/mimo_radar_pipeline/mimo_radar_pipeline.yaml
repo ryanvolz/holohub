@@ -79,6 +79,15 @@ advanced_network:
 SubchannelSelectOp:
   subchannel_idx: [0, 1, 2, 3, 4, 5, 6, 7]
 
+ScheduledRotatorOp:
+  cycle_duration_secs: 30
+  cycle_start_timestamp: 0
+  schedule:
+    - start: 0
+      freq: 3e+6
+    - start: 15
+      freq: 3.05e+6
+
 ResamplePolyOp:
   chunk_size: *rx_chunk_size
   num_subchannels: &num_subchannels_kept 8

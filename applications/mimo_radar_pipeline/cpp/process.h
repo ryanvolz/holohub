@@ -134,4 +134,27 @@ class ResamplePolyOp : public Operator {
   tensor_t<complex_t, 2> padded_data;
 };  // ResamplePolyOp
 
+class ScheduledRotatorOp : public Operator {
+ public:
+  HOLOSCAN_OPERATOR_FORWARD_ARGS(ScheduledRotatorOp)
+
+  ScheduledRotatorOp() = default;
+
+  void setup(OperatorSpec& spec) override;
+  void initialize() override;
+
+  /**
+   * @brief Rotator with frequency shift controlled by a fixed schedule
+   */
+  void compute(InputContext& op_input, OutputContext& op_output, ExecutionContext&) override;
+
+ private:
+  Parameter<double> cycle_duration_secs;
+  Parameter<double> cycle_start_timestamp;
+  Parameter<YAML::Node> schedule_yaml;
+
+  std::vector<std::pair<double, double>> schedule;
+  size_t schedule_idx = 0;
+};  // ScheduledRotatorOp
+
 }  // namespace holoscan::ops

@@ -235,6 +235,13 @@ void DigitalRFSinkOp<sampleType>::compute(InputContext& op_input, OutputContext&
                                               num_subchannels.get(),
                                               is_continuous.get(),
                                               marching_dots.get());
+    if (!drf_writer) {
+      HOLOSCAN_LOG_ERROR(
+          "Failed to initialize Digital RF writer with start_idx {}, sample_rate {}/{}. Exiting.",
+          start_idx,
+          sample_rate_numerator,
+          sample_rate_denominator);
+    }
     writer_initialized = true;
   }
 

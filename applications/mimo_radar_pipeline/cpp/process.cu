@@ -510,31 +510,34 @@ void ScheduledRotatorOp::compute(InputContext& op_input, OutputContext& op_outpu
     auto freq_shift = center_freq - step_freq;
     if (std::abs(freq_shift) > sample_rate / 2) {
       HOLOSCAN_LOG_WARN(
-          "Shifting center frequency {} to {} results in shift {} greater than sample rate {}. "
-          "Shift "
-          "will be aliased.",
-          center_freq,
+          "Shifting frequency of {} to tuned center of {} results in a shift of {}, which is "
+          "greater than the sample rate {}. Shift will be aliased.",
           step_freq,
+          center_freq,
           freq_shift,
           sample_rate);
     }
-    auto aliased_freq_shift = fmod(freq_shift, sample_rate);
-    HOLOSCAN_LOG_INFO("Applying frequency shift of {} (from center freq {} to desired freq {})",
-                      aliased_freq_shift,
-                      center_freq,
-                      step_freq);
-    float phase_increment = 2 * M_PI * aliased_freq_shift / sample_rate;
-    float phase = 2 * M_PI * aliased_freq_shift * (cycle_timestamp - step_start);
+    auto aliased_freq_shift = fmod(freq_shift + sample_rate / 2, sample_rate) - sample_rate / 2;
+    HOLOSCAN_LOG_INFO(
+        "Applying frequency shift of {} (moving desired frequency of {} to baseband at center freq "
+        "of {})",
+        aliased_freq_shift,
+        step_freq,
+        center_freq);
+    double phase_increment = 2 * M_PI * aliased_freq_shift / sample_rate;
+    double phase = 2 * M_PI * aliased_freq_shift * (cycle_timestamp - step_start);
 
     // do the rotation
     auto in_data_flipped = in->data.Permute({1, 0});
-    auto phase_increments =
-        matx::expj(matx::range<1>(in_data_flipped.Shape(), phase, phase_increment));
+    auto phase_range = range<0>({in_data_flipped.Size(1)}, phase, phase_increment);
+    // want expj to operate on double for accuracy, but then cast to float (complex_t)
+    // for compatibility with input data
+    auto rotator = matx::as_type<complex_t>(matx::expj(phase_range));
 
     auto out_data = make_tensor<complex_t>(in->data.Shape(), MATX_ASYNC_DEVICE_MEMORY, stream);
     auto out_data_flipped = out_data.Permute({1, 0});
 
-    (out_data_flipped = in_data_flipped * phase_increments).run(stream);
+    (out_data_flipped = in_data_flipped * rotator).run(stream);
 
     auto params = std::make_shared<RFArray<complex_t>>(out_data, in->metadata, stream);
     op_output.emit(params, "rf_out");

@@ -46,14 +46,15 @@ class App : public holoscan::Application {
         "subchannel_select1", from_config("SubchannelSelectOp"));
 
     auto converter0 = make_operator<ops::ComplexIntToFloatOp>("converter0");
-    // auto converter1 = make_operator<ops::ComplexIntToFloatOp>("converter1");
+    auto converter1 = make_operator<ops::ComplexIntToFloatOp>("converter1");
 
     auto rotator =
         make_operator<ops::ScheduledRotatorOp>("rotator", from_config("ScheduledRotatorOp"));
 
-    auto resample0 = make_operator<ops::ResamplePolyOp>("resample0", from_config("ResamplePolyOp"));
-    // auto resample1 = make_operator<ops::ResamplePolyOp>("resample1",
-    // from_config("ResamplePolyOp"));
+    auto resample_emvsis =
+        make_operator<ops::ResamplePolyOp>("resample0", from_config("ResamplePolyOp_emvsis"));
+    auto resample_zephyr =
+        make_operator<ops::ResamplePolyOp>("resample1", from_config("ResamplePolyOp_zephyr"));
 
     auto drf_sink_emvsis = make_operator<ops::DigitalRFSinkOp<complex_t>>(
         "drf_sink_emvsis", from_config("DigitalRFSinkOp_emvsis"));
@@ -64,16 +65,14 @@ class App : public holoscan::Application {
     add_flow(adv_rx_pkt0, subchannel_select0);
     add_flow(subchannel_select0, converter0);
     add_flow(converter0, rotator);
-    // add_flow(rotator, resample0);
-    // add_flow(resample0, drf_sink_emvsis);
-    add_flow(rotator, drf_sink_emvsis);
+    add_flow(rotator, resample_emvsis);
+    add_flow(resample_emvsis, drf_sink_emvsis);
 
     add_flow(adv_net_rx, adv_rx_pkt1, {{"ch1", "burst_in"}});
     add_flow(adv_rx_pkt1, subchannel_select1);
-    // add_flow(subchannel_select1, converter1);
-    // add_flow(converter1, resample1);
-    // add_flow(resample1, drf_sink_zephyr);
-    add_flow(subchannel_select1, drf_sink_zephyr);
+    add_flow(subchannel_select1, converter1);
+    add_flow(converter1, resample_zephyr);
+    add_flow(resample_zephyr, drf_sink_zephyr);
   }
 
  public:

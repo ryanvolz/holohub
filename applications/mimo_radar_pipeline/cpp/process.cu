@@ -326,6 +326,11 @@ void ResamplePolyOp::initialize() {
       (padded_out_len % down.get()) ? padded_out_len / down.get() + 1 : padded_out_len / down.get();
   make_tensor(padded_out_data, {padded_out_len, num_subchannels.get()});
 
+  HOLOSCAN_LOG_INFO("ResamplePolyOp: pad_size {}, out_pad_size {}, out_chunk_size {}",
+                    pad_size,
+                    out_pad_size,
+                    out_chunk_size);
+
   HOLOSCAN_LOG_INFO("ResamplePolyOp::initialize() done");
 }
 

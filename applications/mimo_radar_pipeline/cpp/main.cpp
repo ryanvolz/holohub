@@ -58,7 +58,7 @@ class App : public holoscan::Application {
 
     auto drf_sink_emvsis = make_operator<ops::DigitalRFSinkOp<complex_t>>(
         "drf_sink_emvsis", from_config("DigitalRFSinkOp_emvsis"));
-    auto drf_sink_zephyr = make_operator<ops::DigitalRFSinkOp<sample_t>>(
+    auto drf_sink_zephyr = make_operator<ops::DigitalRFSinkOp<complex_t>>(
         "drf_sink_zephyr", from_config("DigitalRFSinkOp_zephyr"));
 
     add_flow(adv_net_rx, adv_rx_pkt0, {{"ch0", "burst_in"}});

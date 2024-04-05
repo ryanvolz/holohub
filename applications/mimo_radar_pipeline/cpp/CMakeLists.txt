@@ -62,6 +62,7 @@ target_include_directories(mimo_radar_pipeline PRIVATE
 # Copy config file
 add_custom_target(mimo_radar_pipeline_yaml
   COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_CURRENT_SOURCE_DIR}/../mimo_radar_pipeline.yaml" ${CMAKE_CURRENT_BINARY_DIR}
-  DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/../mimo_radar_pipeline.yaml"
+  COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_CURRENT_SOURCE_DIR}/../mimo_radar_pipeline_debug.yaml" ${CMAKE_CURRENT_BINARY_DIR}
+  DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/../mimo_radar_pipeline.yaml" "${CMAKE_CURRENT_SOURCE_DIR}/../mimo_radar_pipeline_debug.yaml"
 )
 add_dependencies(mimo_radar_pipeline mimo_radar_pipeline_yaml)

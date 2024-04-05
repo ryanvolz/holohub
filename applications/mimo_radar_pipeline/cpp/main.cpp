@@ -31,48 +31,92 @@ class App : public holoscan::Application {
     using namespace holoscan;
     HOLOSCAN_LOG_INFO("Initializing radar pipeline as data processor");
 
+    std::shared_ptr<holoscan::Operator> last_op;
+
     auto adv_net_rx =
         make_operator<ops::AdvNetworkOpRx>("adv_network_rx",
                                            from_config("advanced_network"),
                                            make_condition<BooleanCondition>("is_alive", true));
+
+    // sample flow 0
     auto adv_rx_pkt0 =
         make_operator<ops::AdvConnectorOpRx>("adv_connector_rx0", from_config("rx_params"));
+    add_flow(adv_net_rx, adv_rx_pkt0, {{"ch0", "burst_in"}});
+    last_op = adv_rx_pkt0;
+
+    if (from_config("pipeline.subchannel_select0").as<bool>()) {
+      auto subchannel_select0 = make_operator<ops::SubchannelSelectOp<sample_t>>(
+          "subchannel_select0", from_config("SubchannelSelectOp"));
+      add_flow(last_op, subchannel_select0);
+      last_op = subchannel_select0;
+    }
+    if (from_config("pipeline.converter0").as<bool>()) {
+      auto converter0 = make_operator<ops::ComplexIntToFloatOp>("converter0");
+      add_flow(last_op, converter0);
+      last_op = converter0;
+
+      if (from_config("pipeline.rotator0").as<bool>()) {
+        auto rotator0 =
+            make_operator<ops::ScheduledRotatorOp>("rotator0", from_config("ScheduledRotatorOp0"));
+        add_flow(last_op, rotator0);
+        last_op = rotator0;
+      }
+
+      if (from_config("pipeline.resample0").as<bool>()) {
+        auto resample0 =
+            make_operator<ops::ResamplePolyOp>("resample0", from_config("ResamplePolyOp0"));
+        add_flow(last_op, resample0);
+        last_op = resample0;
+      }
+
+      auto drf_sink0 = make_operator<ops::DigitalRFSinkOp<complex_t>>(
+          "drf_sink0", from_config("DigitalRFSinkOp0"));
+      add_flow(last_op, drf_sink0);
+    } else {
+      auto drf_sink0 = make_operator<ops::DigitalRFSinkOp<sample_t>>(
+          "drf_sink0", from_config("DigitalRFSinkOp0"));
+      add_flow(last_op, drf_sink0);
+    }
+
+    // sample flow 1
     auto adv_rx_pkt1 =
         make_operator<ops::AdvConnectorOpRx>("adv_connector_rx1", from_config("rx_params"));
-
-    auto subchannel_select0 = make_operator<ops::SubchannelSelectOp<sample_t>>(
-        "subchannel_select0", from_config("SubchannelSelectOp"));
-    auto subchannel_select1 = make_operator<ops::SubchannelSelectOp<sample_t>>(
-        "subchannel_select1", from_config("SubchannelSelectOp"));
-
-    auto converter0 = make_operator<ops::ComplexIntToFloatOp>("converter0");
-    auto converter1 = make_operator<ops::ComplexIntToFloatOp>("converter1");
-
-    auto rotator =
-        make_operator<ops::ScheduledRotatorOp>("rotator", from_config("ScheduledRotatorOp"));
-
-    auto resample_emvsis =
-        make_operator<ops::ResamplePolyOp>("resample0", from_config("ResamplePolyOp_emvsis"));
-    auto resample_zephyr =
-        make_operator<ops::ResamplePolyOp>("resample1", from_config("ResamplePolyOp_zephyr"));
-
-    auto drf_sink_emvsis = make_operator<ops::DigitalRFSinkOp<complex_t>>(
-        "drf_sink_emvsis", from_config("DigitalRFSinkOp_emvsis"));
-    auto drf_sink_zephyr = make_operator<ops::DigitalRFSinkOp<complex_t>>(
-        "drf_sink_zephyr", from_config("DigitalRFSinkOp_zephyr"));
-
-    add_flow(adv_net_rx, adv_rx_pkt0, {{"ch0", "burst_in"}});
-    add_flow(adv_rx_pkt0, subchannel_select0);
-    add_flow(subchannel_select0, converter0);
-    add_flow(converter0, rotator);
-    add_flow(rotator, resample_emvsis);
-    add_flow(resample_emvsis, drf_sink_emvsis);
-
     add_flow(adv_net_rx, adv_rx_pkt1, {{"ch1", "burst_in"}});
-    add_flow(adv_rx_pkt1, subchannel_select1);
-    add_flow(subchannel_select1, converter1);
-    add_flow(converter1, resample_zephyr);
-    add_flow(resample_zephyr, drf_sink_zephyr);
+    last_op = adv_rx_pkt1;
+
+    if (from_config("pipeline.subchannel_select1").as<bool>()) {
+      auto subchannel_select1 = make_operator<ops::SubchannelSelectOp<sample_t>>(
+          "subchannel_select1", from_config("SubchannelSelectOp"));
+      add_flow(last_op, subchannel_select1);
+      last_op = subchannel_select1;
+    }
+    if (from_config("pipeline.converter1").as<bool>()) {
+      auto converter1 = make_operator<ops::ComplexIntToFloatOp>("converter1");
+      add_flow(last_op, converter1);
+      last_op = converter1;
+
+      if (from_config("pipeline.rotator1").as<bool>()) {
+        auto rotator1 =
+            make_operator<ops::ScheduledRotatorOp>("rotator1", from_config("ScheduledRotatorOp1"));
+        add_flow(last_op, rotator1);
+        last_op = rotator1;
+      }
+
+      if (from_config("pipeline.resample1").as<bool>()) {
+        auto resample1 =
+            make_operator<ops::ResamplePolyOp>("resample1", from_config("ResamplePolyOp1"));
+        add_flow(last_op, resample1);
+        last_op = resample1;
+      }
+
+      auto drf_sink1 = make_operator<ops::DigitalRFSinkOp<complex_t>>(
+          "drf_sink1", from_config("DigitalRFSinkOp1"));
+      add_flow(last_op, drf_sink1);
+    } else {
+      auto drf_sink1 = make_operator<ops::DigitalRFSinkOp<sample_t>>(
+          "drf_sink1", from_config("DigitalRFSinkOp1"));
+      add_flow(last_op, drf_sink1);
+    }
   }
 
  public:

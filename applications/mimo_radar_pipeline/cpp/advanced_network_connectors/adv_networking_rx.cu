@@ -26,9 +26,9 @@
 __device__ __forceinline__ void gen_meta_from_pkt_cnt(RfPktHeader* meta, const uint64_t pkt_cnt,
                                                       const uint16_t num_subchannels) {
   meta->sample_idx = static_cast<uint64_t>(SPOOF_SAMPLES_PER_PKT * pkt_cnt);
-  meta->sample_rate_numerator = 1000000;
+  meta->sample_rate_numerator = 64000000;
   meta->sample_rate_denominator = 1;
-  meta->channel_idx = 0;
+  meta->channel_idx = 100;
   meta->num_subchannels = num_subchannels;
   meta->pkt_samples = SPOOF_SAMPLES_PER_PKT;
   meta->bits_per_int = 128;

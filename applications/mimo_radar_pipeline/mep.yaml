@@ -28,7 +28,7 @@ scheduler:
 pipeline:
   subchannel_select0: false
   converter0: true
-  rotator0: true
+  rotator0: false
   resample0: true
 
 rx_params:
@@ -73,7 +73,7 @@ ScheduledRotatorOp0:
   cycle_start_timestamp: 0
   schedule:
     - start: 0
-      freq: 100e+6
+      freq: 0e+6
 
 ResamplePolyOp0:
   chunk_size: *rx_chunk_size
@@ -89,5 +89,5 @@ ResamplePolyOp0:
 DigitalRFSinkOp0:
   chunk_size: &drf_chunk_size 640000
   num_subchannels: *num_subchannels
-  channel_dir: /data/ringbuffer/mep/100_MHz
+  channel_dir: /data/ringbuffer/mep/16MHz
   uuid: mep_pipeline

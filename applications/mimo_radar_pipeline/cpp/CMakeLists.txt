@@ -62,6 +62,7 @@ target_include_directories(mimo_radar_pipeline PRIVATE
 # Copy config file
 add_custom_target(mep_yaml
   COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_CURRENT_SOURCE_DIR}/../mep.yaml" ${CMAKE_CURRENT_BINARY_DIR}
-  DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/../mep.yaml"
+  COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_CURRENT_SOURCE_DIR}/../20MHz.yaml" ${CMAKE_CURRENT_BINARY_DIR}
+  DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/../mep.yaml" "${CMAKE_CURRENT_SOURCE_DIR}/../20MHz.yaml"
 )
 add_dependencies(mimo_radar_pipeline mep_yaml)

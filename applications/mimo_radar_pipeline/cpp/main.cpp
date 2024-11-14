@@ -71,6 +71,20 @@ class App : public holoscan::Application {
         last_op = resample0;
       }
 
+      if (from_config("pipeline.resample1").as<bool>()) {
+        auto resample1 =
+            make_operator<ops::ResamplePolyOp>("resample1", from_config("ResamplePolyOp1"));
+        add_flow(last_op, resample1);
+        last_op = resample1;
+      }
+
+      if (from_config("pipeline.resample2").as<bool>()) {
+        auto resample2 =
+            make_operator<ops::ResamplePolyOp>("resample2", from_config("ResamplePolyOp2"));
+        add_flow(last_op, resample2);
+        last_op = resample2;
+      }
+
       auto drf_sink0 = make_operator<ops::DigitalRFSinkOp<complex_t>>(
           "drf_sink0", from_config("DigitalRFSinkOp0"));
       add_flow(last_op, drf_sink0);

@@ -29,7 +29,9 @@ pipeline:
   subchannel_select0: false
   converter0: true
   rotator0: false
-  resample0: true
+  resample0: false
+  resample1: false
+  resample2: true
 
 rx_params:
   batch_size: &batch_size 1024  # Number of packets to process at once into tensor data
@@ -75,7 +77,7 @@ ScheduledRotatorOp0:
     - start: 0
       freq: 0e+6
 
-ResamplePolyOp0:
+ResamplePolyOp2:
   chunk_size: *rx_chunk_size
   num_subchannels: *num_subchannels
   up: 5
@@ -87,5 +89,5 @@ ResamplePolyOp0:
 DigitalRFSinkOp0:
   chunk_size: &drf_chunk_size 800000
   num_subchannels: *num_subchannels
-  channel_dir: /data/ringbuffer/mep/20MHz
-  uuid: mep_pipeline
+  channel_dir: /data/ringbuffer/mep/sr20MHz
+  uuid: mep_pipeline_sr20MHz

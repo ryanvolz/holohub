@@ -34,7 +34,7 @@ pipeline:
   resample2: true
 
 rx_params:
-  batch_size: &batch_size 1024  # Number of packets to process at once into tensor data
+  batch_size: &batch_size 1250  # Number of packets to process at once into tensor data
   max_packet_size: &max_packet_size 8256
   num_subchannels: &num_subchannels 1  # Number of IQ subchannels of data that form a sample
   num_samples: &rx_chunk_size 2560000  # Number of samples to output as a single chunk, must fit one batch of packets

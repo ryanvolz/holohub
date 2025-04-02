@@ -1,0 +1,75 @@
+/*
+ * SPDX-FileCopyrightText: Copyright (c) 2025 Massachusetts Institute of Technology
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+#include <matx.h>
+
+#include "holoscan/holoscan.hpp"
+#include "rf_array/rf_array.h"
+#include "rf_array/subchannel_select.h"
+
+namespace holoscan::ops {
+
+// ----- SubchannelSelect ---------------------------------------------------
+template <typename sampleType>
+void SubchannelSelect<sampleType>::setup(OperatorSpec& spec) {
+  spec.input<std::shared_ptr<RFArray<sampleType>>>("rf_in");
+  spec.output<std::shared_ptr<RFArray<sampleType>>>("rf_out");
+
+  spec.param<std::vector<int, std::allocator<int>>>(
+      subchannel_idx,
+      "subchannel_idx",
+      "Subchannel selection index",
+      "Vector of subchannel indices to keep in the RFArray",
+      {});
+}
+
+template <typename sampleType>
+void SubchannelSelect<sampleType>::initialize() {
+  HOLOSCAN_LOG_INFO("SubchannelSelect::initialize()");
+  holoscan::Operator::initialize();
+
+  idx_len = subchannel_idx.get().size();
+  make_tensor(subchannel_idx_tensor, {idx_len});
+  cudaMemcpy(subchannel_idx_tensor.Data(),
+             subchannel_idx.get().data(),
+             idx_len * sizeof(int),
+             cudaMemcpyDefault);
+
+  HOLOSCAN_LOG_INFO("SubchannelSelect::initialize() done");
+}
+
+/**
+ * @brief Select RFArray subchannels to keep
+ */
+template <typename sampleType>
+void SubchannelSelect<sampleType>::compute(InputContext& op_input, OutputContext& op_output,
+                                           ExecutionContext&) {
+  HOLOSCAN_LOG_TRACE("SubchannelSelect::compute() called");
+  auto in = op_input.receive<std::shared_ptr<RFArray<sampleType>>>("rf_in").value();
+  cudaStream_t stream = in->stream;
+
+  auto out_tensor = matx::make_tensor<sampleType>(
+      {in->data.Size(0), idx_len}, matx::MATX_ASYNC_DEVICE_MEMORY, stream);
+  (out_tensor = matx::remap<1>(in->data, subchannel_idx_tensor)).run(stream);
+
+  auto params = std::make_shared<RFArray<sampleType>>(out_tensor, in->metadata, stream);
+  op_output.emit(params, "rf_out");
+}
+
+template class SubchannelSelect<complex_int_type>;
+template class SubchannelSelect<complex_t>;
+
+}  // namespace holoscan::ops

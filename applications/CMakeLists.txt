@@ -83,6 +83,15 @@ add_holohub_application(qt_video_replayer DEPENDS OPERATORS qt_video npp_filter)
 
 add_holohub_application(realsense_visualizer DEPENDS OPERATORS realsense_camera)
 
+add_holohub_application(sdr_mep_recorder DEPENDS
+                        OPERATORS basic_network
+                                  rf_array_digital_rf
+                                  rf_array_net_connector_basic
+                                  rf_array_resample
+                                  rf_array_rotator
+                                  rf_array_subchannel_select
+                                  rf_array_type_conversion)
+
 add_holohub_application(stereo_vision)
 
 add_holohub_application(tao_peoplenet)

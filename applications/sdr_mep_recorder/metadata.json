@@ -1,0 +1,59 @@
+{
+  "application": {
+    "name": "SpectrumX MEP recorder",
+    "authors": [
+      {
+        "name": "Ryan Volz",
+        "affiliation": "MIT Haystack Observatory"
+      }
+    ],
+    "language": "C++",
+    "version": "0.1",
+    "changelog": {
+      "0.1": "Initial Release"
+    },
+    "holoscan_sdk": {
+      "minimum_required_version": "2.5.0",
+      "tested_versions": ["2.5.0"]
+    },
+    "platforms": ["amd64", "arm64"],
+    "tags": ["Networking", "Network", "UDP", "IP", "Recording", "SDR", "Signal Processing"],
+    "ranking": 2,
+    "dependencies": {
+      "operators": [
+        {
+          "name": "basic_network",
+          "version": "1.0"
+        },
+        {
+          "name": "rf_array_digital_rf",
+          "version": "0.1"
+        },
+        {
+          "name": "rf_array_net_connector",
+          "version": "0.1"
+        },
+        {
+          "name": "rf_array_resample",
+          "version": "0.1"
+        },
+        {
+          "name": "rf_array_rotator",
+          "version": "0.1"
+        },
+        {
+          "name": "rf_array_subchannel_select",
+          "version": "0.1"
+        },
+        {
+          "name": "rf_array_type_conversion",
+          "version": "0.1"
+        }
+      ]
+    },
+    "run": {
+      "command": "<holohub_app_bin>/sdr_mep_recorder",
+      "workdir": "holohub_bin"
+    }
+  }
+}

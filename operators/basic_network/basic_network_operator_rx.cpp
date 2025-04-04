@@ -91,7 +91,7 @@ void BasicNetworkOpRx::initialize() {
 
 void BasicNetworkOpRx::compute([[maybe_unused]] InputContext&, OutputContext& op_output,
                                [[maybe_unused]] ExecutionContext&) {
-  HOLOSCAN_LOG_DEBUG("BasicNetworkOpRx::compute");
+  HOLOSCAN_LOG_TRACE("BasicNetworkOpRx::compute()");
   sockaddr_in addr;
   socklen_t from_len;
   from_len = sizeof(addr);
@@ -140,7 +140,7 @@ void BasicNetworkOpRx::compute([[maybe_unused]] InputContext&, OutputContext& op
   pkts_in_batch_ = 0;
 
   op_output.emit(msg, "burst_out");
-  HOLOSCAN_LOG_DEBUG("BasicNetworkOpRx::compute");
+  HOLOSCAN_LOG_TRACE("BasicNetworkOpRx::compute() done");
 }
 
 };  // namespace holoscan::ops

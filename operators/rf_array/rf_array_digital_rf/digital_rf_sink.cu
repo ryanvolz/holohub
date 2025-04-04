@@ -97,8 +97,13 @@ void DigitalRFSink<sampleType>::initialize() {
   channel_dir_path = channel_dir.get();
   std::filesystem::create_directories(channel_dir_path);
 
-  // allocate in host memory so we can access from CPU without device synchronization
-  matx::make_tensor(rf_data, {chunk_size.get(), num_subchannels.get()}, matx::MATX_HOST_MEMORY);
+  for (int n = 0; n < num_concurrent; n++) {
+    // allocate in host memory so we can access from CPU without device synchronization
+    matx::make_tensor(
+        rf_data_arrs[n], {chunk_size.get(), num_subchannels.get()}, matx::MATX_HOST_MEMORY);
+
+    cudaEventCreate(&events_[n], cudaEventDisableTiming);
+  }
 
   HOLOSCAN_LOG_INFO("DigitalRFSink::initialize() done");
 }
@@ -112,18 +117,27 @@ void DigitalRFSink<sampleType>::compute(InputContext& op_input, OutputContext& o
   HOLOSCAN_LOG_TRACE("DigitalRFSink::compute() called");
   auto in = op_input.receive<std::shared_ptr<RFArray<sampleType>>>("rf_in").value();
 
-  if (rf_data.Shape() != in->data.Shape()) {
+  if (rf_data_arrs[0].Shape() != in->data.Shape()) {
     HOLOSCAN_LOG_ERROR(
         "Incoming array shape ({}, {}) does not equal config-specified shape ({}, {})",
         in->data.Size(0),
         in->data.Size(1),
-        rf_data.Size(0),
-        rf_data.Size(1));
+        rf_data_arrs[0].Size(0),
+        rf_data_arrs[0].Size(1));
   }
 
   // copy incoming data/metadata to host-allocated memory
-  matx::copy(rf_data, in->data, in->stream);
-  cudaStreamSynchronize(in->stream);
+  matx::copy(rf_data_arrs[cur_idx], in->data, in->stream);
+  cudaEventRecord(events_[cur_idx], in->stream);
+  rf_metadatas[cur_idx] = in->metadata;
+  cur_msg_.buffer_idx = cur_idx;
+  cur_msg_.event = events_[cur_idx];
+  copy_q.push(cur_msg_);
+  HOLOSCAN_LOG_DEBUG("Buffer {}: Copying {} samples @ {} from GPU memory",
+                     cur_idx,
+                     rf_data_arrs[cur_idx].Size(0),
+                     rf_metadatas[cur_idx].sample_idx);
+  cur_idx = (++cur_idx % num_concurrent);
 
   // initialize writer using data specifications from the first array
   if (!writer_initialized) {
@@ -180,15 +194,36 @@ void DigitalRFSink<sampleType>::compute(InputContext& op_input, OutputContext& o
     writer_initialized = true;
   }
 
-  HOLOSCAN_LOG_DEBUG("Writing {} samples @ {}", rf_data.Size(0), in->metadata.sample_idx);
-  auto result = digital_rf_write_hdf5(
-      drf_writer, in->metadata.sample_idx - start_idx, rf_data.Data(), rf_data.Size(0));
-  if (result) {
-    HOLOSCAN_LOG_ERROR("Digital RF write failed with error {}, sample_idx {}  write_len {}",
-                       result,
-                       in->metadata.sample_idx - start_idx,
-                       rf_data.Size(0));
-    exit(result);
+  if (copy_q.size() == num_concurrent) {
+    // copy buffers filled before we could clear any of them and write the array
+    HOLOSCAN_LOG_ERROR("Fell behind in copying arrays from GPU for writing with Digital RF!");
+    // wait until the oldest copy is done and we can write the next array
+    cudaEventSynchronize(copy_q.front().event);
+  }
+
+  while (copy_q.size() > 0) {
+    const auto next_msg = copy_q.front();
+    if (cudaEventQuery(next_msg.event) == cudaSuccess) {
+      HOLOSCAN_LOG_DEBUG("Buffer {}: Writing {} samples @ {}",
+                         next_msg.buffer_idx,
+                         rf_data_arrs[next_msg.buffer_idx].Size(0),
+                         rf_metadatas[next_msg.buffer_idx].sample_idx);
+      auto result = digital_rf_write_hdf5(drf_writer,
+                                          rf_metadatas[next_msg.buffer_idx].sample_idx - start_idx,
+                                          rf_data_arrs[next_msg.buffer_idx].Data(),
+                                          rf_data_arrs[next_msg.buffer_idx].Size(0));
+      if (result) {
+        HOLOSCAN_LOG_ERROR("Digital RF write failed with error {}, sample_idx {}  write_len {}",
+                           result,
+                           rf_metadatas[next_msg.buffer_idx].sample_idx - start_idx,
+                           rf_data_arrs[next_msg.buffer_idx].Size(0));
+        exit(result);
+      }
+
+      copy_q.pop();
+    } else {
+      break;
+    }
   }
 }
 

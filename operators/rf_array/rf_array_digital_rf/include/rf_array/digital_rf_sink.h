@@ -23,6 +23,7 @@
 #include <matx.h>
 
 #include "holoscan/holoscan.hpp"
+#include "rf_array/rf_array.h"
 
 namespace holoscan::ops {
 
@@ -43,6 +44,8 @@ class DigitalRFSink : public Operator {
   void stop() override;
 
  private:
+  static constexpr int num_concurrent = 10;  // Number of concurrent memory transfers / buffers
+
   void _h5type_initialize();
 
   Parameter<uint32_t> chunk_size;
@@ -64,7 +67,21 @@ class DigitalRFSink : public Operator {
   uint64_t sample_rate_denominator;
   std::filesystem::path channel_dir_path;
   Digital_rf_write_object* drf_writer;
-  matx::tensor_t<sampleType, 2> rf_data;
+
+  // Concurrent buffer structures
+  std::array<cudaEvent_t, num_concurrent> events_;
+  std::array<matx::tensor_t<sampleType, 2>, num_concurrent> rf_data_arrs;
+  std::array<RfMetaData, num_concurrent> rf_metadatas;
+  int cur_idx = 0;
+
+  // Holds events for waiting on copy from GPU memory
+  struct CopyMsg {
+    int buffer_idx;
+    cudaEvent_t event;
+  };
+
+  CopyMsg cur_msg_{};
+  std::queue<CopyMsg> copy_q;
 };  // DigitalRFSink
 
 }  // namespace holoscan::ops

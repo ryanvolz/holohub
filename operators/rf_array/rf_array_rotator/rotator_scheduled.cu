@@ -36,20 +36,22 @@ void RotatorScheduled::setup(OperatorSpec& spec) {
                      "Cycle start timestamp",
                      "Cycle start timestamp (seconds since Unix epoch)",
                      0);
-  spec.param<YAML::Node>(schedule_yaml,
-                         "schedule",
-                         "Schedule",
-                         "Schedule of frequencies and their activation times in the cycle",
-                         {});
+  spec.param<std::list<std::map<std::string, double>>>(
+      schedule_list,
+      "schedule",
+      "Schedule",
+      "Schedule of frequencies and their activation times in the cycle",
+      {});
 }
 
 void RotatorScheduled::initialize() {
   HOLOSCAN_LOG_INFO("RotatorScheduled::initialize()");
+  register_converter<std::list<std::map<std::string, double>>>();
   holoscan::Operator::initialize();
 
-  for (const auto& sched_item : schedule_yaml.get()) {
-    auto start = sched_item["start"].as<double>();
-    auto freq = sched_item["freq"].as<double>();
+  for (const auto& sched_item : schedule_list.get()) {
+    auto start = sched_item.at("start");
+    auto freq = sched_item.at("freq");
     if (start >= cycle_duration_secs.get()) {
       HOLOSCAN_LOG_ERROR("Schedule step has start {} that is >= cycle_duration_secs {}",
                          start,

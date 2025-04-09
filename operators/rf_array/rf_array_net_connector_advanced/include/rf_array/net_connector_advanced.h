@@ -85,7 +85,7 @@ class NetConnectorAdvanced : public Operator {
   size_t samples_per_arr;
   BufferTracking buffer_track;
   matx::tensor_t<sample_t, 3> rf_data;
-  matx::tensor_t<RfMetaData, 1> rf_metadata;
+  matx::tensor_t<RFMetadata, 1> rf_metadata;
   cudaStream_t proc_stream;
 };  // NetConnectorAdvanced
 

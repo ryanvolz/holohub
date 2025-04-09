@@ -30,7 +30,7 @@ struct complex_int_type {
 using sample_t = complex_int_type;
 
 // Metadata for RF signal
-struct RfMetaData {
+struct RFMetadata {
   uint64_t sample_idx;
   uint64_t sample_rate_numerator;
   uint64_t sample_rate_denominator;
@@ -41,9 +41,9 @@ struct RfMetaData {
 template <typename sampleType>
 struct RFArray {
   matx::tensor_t<sampleType, 2> data;
-  RfMetaData metadata;
+  RFMetadata metadata;
   cudaStream_t stream;
 
-  RFArray(matx::tensor_t<sampleType, 2> _data, RfMetaData _metadata, cudaStream_t _stream)
+  RFArray(matx::tensor_t<sampleType, 2> _data, RFMetadata _metadata, cudaStream_t _stream)
       : data{_data}, metadata{_metadata}, stream{_stream} {}
 };

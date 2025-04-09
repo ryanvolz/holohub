@@ -22,8 +22,8 @@ FetchContent_Declare(libdigital_rf
 )
 FetchContent_MakeAvailable(libdigital_rf)
 
-if (NOT TARGET holoscan::ops::rf_array_header)
-  add_subdirectory(../rf_array_header ../rf_array_header)
+if (NOT TARGET holoscan::ops::rf_array)
+  add_subdirectory(../rf_array ../rf_array)
 endif()
 
 add_library(rf_array_digital_rf_sink SHARED
@@ -39,9 +39,13 @@ target_link_libraries(rf_array_digital_rf_sink
   PUBLIC
     digital_rf::digital_rf
     holoscan::core
-    holoscan::ops::rf_array_header
+    holoscan::ops::rf_array
     matx::matx
 )
+
+if(HOLOHUB_BUILD_PYTHON)
+    add_subdirectory(python)
+endif()
 
 install(
     TARGETS

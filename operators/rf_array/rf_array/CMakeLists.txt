@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 cmake_minimum_required(VERSION 3.20)
-project(rf_array_header CXX)
+project(rf_array CXX)
 
 # Enable cuda language
 if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
@@ -19,12 +19,16 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(MatX)
 
-add_library(rf_array_header INTERFACE include/rf_array/rf_array.h)
-add_library(holoscan::ops::rf_array_header ALIAS rf_array_header)
-target_include_directories(rf_array_header INTERFACE
+add_library(rf_array INTERFACE include/rf_array/rf_array.h)
+add_library(holoscan::ops::rf_array ALIAS rf_array)
+target_include_directories(rf_array INTERFACE
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
 )
-target_link_libraries(rf_array_header
+target_link_libraries(rf_array
   INTERFACE
     matx::matx
 )
+
+if(HOLOHUB_BUILD_PYTHON)
+    add_subdirectory(python)
+endif()

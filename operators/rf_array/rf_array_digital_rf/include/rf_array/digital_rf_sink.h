@@ -71,7 +71,7 @@ class DigitalRFSink : public Operator {
   // Concurrent buffer structures
   std::array<cudaEvent_t, num_concurrent> events_;
   std::array<matx::tensor_t<sampleType, 2>, num_concurrent> rf_data_arrs;
-  std::array<RfMetaData, num_concurrent> rf_metadatas;
+  std::array<RFMetadata, num_concurrent> rf_metadatas;
   int cur_idx = 0;
 
   // Holds events for waiting on copy from GPU memory

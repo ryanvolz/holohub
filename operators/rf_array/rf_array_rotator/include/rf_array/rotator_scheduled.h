@@ -43,7 +43,7 @@ class RotatorScheduled : public Operator {
  private:
   Parameter<double> cycle_duration_secs;
   Parameter<double> cycle_start_timestamp;
-  Parameter<YAML::Node> schedule_yaml;
+  Parameter<std::list<std::map<std::string, double>>> schedule_list;
 
   std::vector<std::pair<double, double>> schedule;
   size_t schedule_idx = 0;

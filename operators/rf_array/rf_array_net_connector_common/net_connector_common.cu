@@ -37,7 +37,7 @@ __device__ __forceinline__ void gen_meta_from_pkt_cnt(RfPktHeader* meta, const u
 }
 #endif
 
-__global__ void place_packet_data_kernel(sample_t* out, RfMetaData* out_metadata,
+__global__ void place_packet_data_kernel(sample_t* out, RFMetadata* out_metadata,
                                          const void* const* const __restrict__ in, int* sample_cnt,
                                          bool* received_end, unsigned long long int* buffer_counter,
                                          const uint16_t buffer_size, const uint32_t num_samples,
@@ -118,7 +118,7 @@ __global__ void place_packet_data_kernel(sample_t* out, RfMetaData* out_metadata
   }
 }
 
-void place_packet_data(sample_t* out, RfMetaData* out_metadata, void* const* const in,
+void place_packet_data(sample_t* out, RFMetadata* out_metadata, void* const* const in,
                        int* sample_cnt, bool* received_end, unsigned long long int* buffer_counter,
                        const uint32_t num_pkts, const uint16_t buffer_size,
                        const uint32_t num_samples, const uint16_t num_subchannels,

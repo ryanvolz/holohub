@@ -13,8 +13,8 @@ if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
 endif()
 enable_language(CUDA)
 
-if (NOT TARGET holoscan::ops::rf_array_header)
-  add_subdirectory(../rf_array_header ../rf_array_header)
+if (NOT TARGET holoscan::ops::rf_array)
+  add_subdirectory(../rf_array ../rf_array)
 endif()
 
 add_library(rf_array_resample_poly SHARED
@@ -29,9 +29,13 @@ target_include_directories(rf_array_resample_poly
 target_link_libraries(rf_array_resample_poly
   PUBLIC
     holoscan::core
-    holoscan::ops::rf_array_header
+    holoscan::ops::rf_array
     matx::matx
 )
+
+if(HOLOHUB_BUILD_PYTHON)
+    add_subdirectory(python)
+endif()
 
 install(
     TARGETS

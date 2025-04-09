@@ -167,7 +167,7 @@ void NetConnectorBasic::check_completed_and_emit_arrays(OutputContext& op_output
     if (!buffer_track.received_end_h[pos_wrap]) { continue; }
 
     // Received End-of-Array (EOA) message, emit to downstream operators
-    auto out_metadata_tensor = matx::make_tensor<RfMetaData>({}, matx::MATX_HOST_MEMORY);
+    auto out_metadata_tensor = matx::make_tensor<RFMetadata>({}, matx::MATX_HOST_MEMORY);
     matx::copy(out_metadata_tensor,
                rf_metadata.Slice<0>({static_cast<matx::index_t>(pos_wrap)}, {matx::matxDropDim}),
                stream);

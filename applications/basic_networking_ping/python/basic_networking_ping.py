@@ -20,7 +20,7 @@ from pathlib import Path
 from holoscan.conditions import CountCondition
 from holoscan.core import Application, Operator, OperatorSpec
 
-from holohub.basic_network import BasicNetworkOpRx, BasicNetworkOpTx
+from holohub.basic_network import BasicNetworkOpRx, BasicNetworkOpTx, NetworkOpBurstParams
 
 logger = logging.getLogger("BasicNetworkingPing")
 logging.basicConfig(level=logging.INFO)
@@ -39,7 +39,11 @@ class BasicNetworkPingTxOp(Operator):
         to_send = list(range(value, value + 10))
         logger.info(f"Sending index {self.index}: {bytearray(to_send)}")
         self.index += 1
-        op_output.emit(bytearray(to_send), "msg_out")
+        op_output.emit(
+            NetworkOpBurstParams(bytearray(to_send), 1),
+            "msg_out",
+            "std::shared_ptr<NetworkOpBurstParams>",
+        )
 
 
 class BasicNetworkPingRxOp(Operator):

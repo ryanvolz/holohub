@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2022-2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025 Massachusetts Institute of Technology
 # SPDX-License-Identifier: Apache-2.0
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,29 +13,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Files to include in our module
-list(APPEND basic_network_python_files
-    __init__.py
-    basic_network_common.py
-    basic_network_rx.py
-    basic_network_tx.py
-)
+# Add on to the rf_array_python target already created in the rf_array/python directory
+# to build a unified module. To do that, we need to:
+# 1) add a #define that will include the binding call that has been added to rf_array_pybind.cpp,
+# 2) add the sources that define the binding function, and
+# 3) link to the operator definition
+include(pybind11_add_holohub_module)
 
-# Define paths to copy in the holohub python module
-list(TRANSFORM basic_network_python_files
-    PREPEND ${CMAKE_CURRENT_SOURCE_DIR}/
-    OUTPUT_VARIABLE basic_network_python_src_files
-)
-set(basic_network_python_out_dir ${HOLOHUB_PYTHON_MODULE_OUT_DIR}/basic_network)
-file(MAKE_DIRECTORY ${basic_network_python_out_dir})
-list(TRANSFORM basic_network_python_files
-    PREPEND ${basic_network_python_out_dir}/
-    OUTPUT_VARIABLE basic_network_python_out_files
-)
-
-# Target to copy
-add_custom_target(basic_network_python
-    COMMAND ${CMAKE_COMMAND} -E copy ${basic_network_python_src_files} ${basic_network_python_out_dir}
-    DEPENDS ${basic_network_python_src_files}
-    BYPRODUCTS ${basic_network_python_out_files}
+pybind11_add_holohub_module(
+    CPP_CMAKE_TARGET basic_network
+    CLASS_NAME "NetworkOpBurstParams, BasicNetworkOpRx, BasicNetworkOpTx"
+    SOURCES basic_network_pybind.cpp
 )

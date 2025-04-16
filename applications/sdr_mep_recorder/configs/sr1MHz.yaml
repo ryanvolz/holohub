@@ -85,6 +85,22 @@ RotatorScheduled0:
     - start: 0
       freq: 0e+6
 
+# ResamplePoly0:
+#   up: 1
+#   down: 8
+#   outrate_cutoff: 1.0
+#   # transition_width: 2 * (cutoff - 1 / remaining_dec)
+#   #                   2 * (1.0 - 1 / 8) = 1.75
+#   outrate_transition_width: 1.75
+#   attenuation_db: 105
+
+# ResamplePoly2:
+#   up: 1
+#   down: 8
+#   outrate_cutoff: 1.0
+#   outrate_transition_width: 0.2
+#   attenuation_db: 99.25
+
 ResamplePoly0:
   chunk_size: *rx_chunk_size
   num_subchannels: *num_subchannels

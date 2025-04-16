@@ -6,10 +6,73 @@ import signal
 import sys
 
 import holoscan
+import numpy as np
+import scipy.signal as ss
 
 from holohub import basic_network, rf_array
 
 logger = logging.getLogger("sdr_mep_recorder.py")
+
+
+def add_chunk_kwargs(chunk_shape, **kwargs):
+    kwargs["chunk_size"] = chunk_shape[0]
+    kwargs["num_subchannels"] = chunk_shape[1]
+    return kwargs
+
+
+def add_filter_coefs_kwargs(**kwargs):
+    """Calculate and add filter coefficients (taps) to resampler keyword arguments
+
+    Parameters
+    ----------
+    outrate_cutoff : float, optional
+        Normalized low-pass filter cutoff frequency (half-amplitude point,
+        where the attenuation will be -6 dB) where a value of 1.0 indicates
+        half the *output* sampling rate. The value in Hertz is therefore
+        ``(outrate_cutoff * out_sample_rate / 2.0)``. The default is 1.0.
+    outrate_transition_width : float, optional
+        Normalized width of the transition region from pass band to stop band,
+        where a value of 1.0 indicates half the *output* sampling rate.
+        The value in Hertz is therefore
+        ``(outrate_transition_width * out_sample_rate / 2.0)``. The default
+        is 0.2.
+    attenuation_db : float, optional
+        Minimum attenuation of the low-pass filter stop band in dB.
+        The default is 100.
+    numtaps: int, optional
+        The length of the filter (number of taps), overriding the value
+        that would be used based on `outrate_transition_width` and
+        `attenuation_db`.
+    kaiser_beta : float, optional
+        The beta parameter for the Kaiser window (pi * alpha, controlling
+        main lobe width versus side lobe level), overriding the value that
+        would be used based on `outrate_transition_width` and
+        `attenuation_db`.
+    filter_coefs : list, optional
+        List of filter coefficients. If provided, these will be used instead
+        of ones that would be designed based on the above parameters.
+
+
+    Returns
+    -------
+    dict
+        Keyword arguments including `filter_coefs` that can be passed to the
+        ResamplePoly operator.
+    """
+    outrate_cutoff = kwargs.pop("outrate_cutoff", 1.0)
+    cutoff = outrate_cutoff / kwargs["down"]
+    outrate_transition_width = kwargs.pop("outrate_transition_width", 0.2)
+    transition_width = outrate_transition_width / kwargs["down"]
+    attenuation_db = kwargs.pop("attenuation_db", 100)
+    numtaps, kaiser_beta = ss.kaiserord(attenuation_db, transition_width)
+    # round up to nearest even-order (Type I) filter
+    numtaps = int(np.ceil((numtaps - 1) / 2.0)) * 2 + 1
+    numtaps = kwargs.pop("numtaps", numtaps)
+    kaiser_beta = kwargs.pop("kaiser_beta", kaiser_beta)
+    if "filter_coefs" in kwargs:
+        return kwargs
+    kwargs["filter_coefs"] = ss.firwin(numtaps, cutoff, window=("kaiser", kaiser_beta))
+    return kwargs
 
 
 class App(holoscan.core.Application):
@@ -21,65 +84,90 @@ class App(holoscan.core.Application):
         net_connector_rx = rf_array.NetConnectorBasic(
             self, name="net_connector_rx", **self.kwargs("rx_params")
         )
+        self.add_flow(basic_net_rx, net_connector_rx, {("burst_out", "burst_in")})
 
-        pipeline = [basic_net_rx, net_connector_rx]
-        self.add_flow(pipeline[-2], pipeline[-1], {("burst_out", "burst_in")})
+        last_chunk_shape = (
+            self.kwargs("rx_params")["num_samples"],
+            self.kwargs("rx_params")["num_subchannels"],
+        )
+        last_op = net_connector_rx
 
         if self.kwargs("pipeline")["subchannel_select0"]:
             subchannel_select0 = rf_array.SubchannelSelect_sc16(
                 self, name="subchannel_select0", **self.kwargs("SubchannelSelect")
             )
-            pipeline.append(subchannel_select0)
-            self.add_flow(pipeline[-2], pipeline[-1])
+            self.add_flow(last_op, subchannel_select0)
+            last_op = subchannel_select0
+            last_chunk_shape = (
+                last_chunk_shape[0],
+                len(self.kwargs("SubchannelSelect")["subchannel_idx"]),
+            )
 
         if self.kwargs("pipeline")["converter0"]:
             converter0 = rf_array.TypeConversionComplexIntToFloat(
                 self,
                 name="converter0",
             )
-            pipeline.append(converter0)
-            self.add_flow(pipeline[-2], pipeline[-1])
+            self.add_flow(last_op, converter0)
+            last_op = converter0
 
             if self.kwargs("pipeline")["rotator0"]:
                 rotator0 = rf_array.RotatorScheduled(
                     self, name="rotator0", **self.kwargs("RotatorScheduled0")
                 )
-                pipeline.append(rotator0)
-                self.add_flow(pipeline[-2], pipeline[-1])
+                self.add_flow(last_op, rotator0)
+                last_op = rotator0
 
             if self.kwargs("pipeline")["resample0"]:
-                resample0 = rf_array.ResamplePoly(
-                    self, name="resample0", **self.kwargs("ResamplePoly0")
+                resample_kwargs = add_filter_coefs_kwargs(
+                    **add_chunk_kwargs(last_chunk_shape, **self.kwargs("ResamplePoly0"))
                 )
-                pipeline.append(resample0)
-                self.add_flow(pipeline[-2], pipeline[-1])
+                resample0 = rf_array.ResamplePoly(self, name="resample0", **resample_kwargs)
+                self.add_flow(last_op, resample0)
+                last_op = resample0
+                last_chunk_shape = (
+                    last_chunk_shape[0] * resample_kwargs["up"] // resample_kwargs["down"],
+                    last_chunk_shape[1],
+                )
 
             if self.kwargs("pipeline")["resample1"]:
-                resample1 = rf_array.ResamplePoly(
-                    self, name="resample1", **self.kwargs("ResamplePoly1")
+                resample_kwargs = add_filter_coefs_kwargs(
+                    **add_chunk_kwargs(last_chunk_shape, **self.kwargs("ResamplePoly1"))
                 )
-                pipeline.append(resample1)
-                self.add_flow(pipeline[-2], pipeline[-1])
+                resample1 = rf_array.ResamplePoly(self, name="resample1", **resample_kwargs)
+                self.add_flow(last_op, resample1)
+                last_op = resample1
+                last_chunk_shape = (
+                    last_chunk_shape[0] * resample_kwargs["up"] // resample_kwargs["down"],
+                    last_chunk_shape[1],
+                )
 
             if self.kwargs("pipeline")["resample2"]:
-                resample2 = rf_array.ResamplePoly(
-                    self, name="resample2", **self.kwargs("ResamplePoly2")
+                resample_kwargs = add_filter_coefs_kwargs(
+                    **add_chunk_kwargs(last_chunk_shape, **self.kwargs("ResamplePoly2"))
                 )
-                pipeline.append(resample2)
-                self.add_flow(pipeline[-2], pipeline[-1])
+                resample2 = rf_array.ResamplePoly(self, name="resample2", **resample_kwargs)
+                self.add_flow(last_op, resample2)
+                last_op = resample2
+                last_chunk_shape = (
+                    last_chunk_shape[0] * resample_kwargs["up"] // resample_kwargs["down"],
+                    last_chunk_shape[1],
+                )
 
             drf_sink0 = rf_array.DigitalRFSink_fc32(
-                self, name="drf_sink0", **self.kwargs("DigitalRFSink0")
+                self,
+                name="drf_sink0",
+                **add_chunk_kwargs(last_chunk_shape, **self.kwargs("DigitalRFSink0")),
             )
-            pipeline.append(drf_sink0)
-            self.add_flow(pipeline[-2], pipeline[-1])
+            self.add_flow(last_op, drf_sink0)
 
         else:
             drf_sink0 = rf_array.DigitalRFSink_sc16(
-                self, name="drf_sink0", **self.kwargs("DigitalRFSink0")
+                self,
+                name="drf_sink0",
+                **add_chunk_kwargs(last_chunk_shape, **self.kwargs("DigitalRFSink0")),
             )
-            pipeline.append(drf_sink0)
-            self.add_flow(pipeline[-2], pipeline[-1])
+            self.add_flow(last_op, drf_sink0)
 
 
 def main():

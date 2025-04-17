@@ -100,7 +100,7 @@ __global__ void place_packet_data_kernel(sample_t* out, RFMetadata* out_metadata
           out_metadata[buffer_idx].sample_idx = global_buffer_idx * num_samples;
           out_metadata[buffer_idx].sample_rate_numerator = meta->sample_rate_numerator;
           out_metadata[buffer_idx].sample_rate_denominator = meta->sample_rate_denominator;
-          out_metadata[buffer_idx].channel_idx = meta->channel_idx;
+          out_metadata[buffer_idx].center_freq = 1e6 * meta->channel_idx;
         }
 
         // todo Smarter way than atomicAdd

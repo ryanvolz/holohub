@@ -69,7 +69,7 @@ PYBIND11_MODULE(_rf_array, m) {
       .def_readonly("sample_idx", &RFMetadata::sample_idx)
       .def_readonly("sample_rate_numerator", &RFMetadata::sample_rate_numerator)
       .def_readonly("sample_rate_denominator", &RFMetadata::sample_rate_denominator)
-      .def_readonly("channel_idx", &RFMetadata::channel_idx);
+      .def_readonly("center_freq", &RFMetadata::center_freq);
 
   py::class_<RFArray<complex_int_type>>(m, "RFArray_sc16", doc::RFArrayTypes::doc_RFArray_python)
       .def_readonly("data", &RFArray<complex_int_type>::data)

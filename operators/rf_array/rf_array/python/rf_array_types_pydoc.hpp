@@ -35,8 +35,8 @@ sample_rate_numerator : int
     Numerator of the sample rate at which the RF data stream is sampled.
 sample_rate_denominator : int
     Denominator of the sample rate at which the RF data stream is sampled.
-channel_idx : int
-    Index of the frequency channel that the RF data samples.
+center_freq : int
+    Center frequency of the RF data samples.
 )doc")
 
 PYDOC(RFArray_python, R"doc(

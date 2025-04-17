@@ -85,7 +85,7 @@ void RotatorScheduled::compute(InputContext& op_input, OutputContext& op_output,
   cudaStream_t stream = in->stream;
 
   // calculate center frequency and timestamp of the data chunk from metadata
-  double center_freq = 1e6 * in->metadata.channel_idx;
+  double center_freq = in->metadata.center_freq;
   double sample_rate = static_cast<double>(in->metadata.sample_rate_numerator) /
                        static_cast<double>(in->metadata.sample_rate_denominator);
   uint64_t sample_sec;

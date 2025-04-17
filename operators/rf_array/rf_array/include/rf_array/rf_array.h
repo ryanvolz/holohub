@@ -34,7 +34,7 @@ struct RFMetadata {
   uint64_t sample_idx;
   uint64_t sample_rate_numerator;
   uint64_t sample_rate_denominator;
-  uint32_t channel_idx;
+  double center_freq;
 };
 
 // Represents a single RF transmission

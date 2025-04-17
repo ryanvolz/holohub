@@ -38,6 +38,17 @@ rx_params:
   num_subchannels: &num_subchannels 1 # Number of IQ subchannels of data that form a sample
   num_samples: &rx_chunk_size 2560000 # Number of samples to output as a single chunk, must fit one batch of packets
   buffer_size: 10 # Number of num_samples chunks to store in the rx buffer
+  spoof_header: true
+  packet_skip_bytes: 0
+  header_metadata:
+    start_sample_idx: 0
+    sample_rate_numerator: 128000000
+    sample_rate_denominator: 1
+    freq_idx: 0
+    num_subchannels: *num_subchannels
+    pkt_samples: 2048
+    bits_per_int: 16
+    is_complex: 1
 
 basic_network:
   batch_size: *batch_size # Number of packets in a batch

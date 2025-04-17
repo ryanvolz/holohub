@@ -46,6 +46,9 @@ class NetConnectorAdvanced : public Operator {
   Parameter<uint16_t> buffer_size_;
   Parameter<uint32_t> num_samples_;
   Parameter<uint16_t> num_subchannels_;
+  Parameter<bool> spoof_header_;
+  Parameter<uint16_t> packet_skip_bytes_;
+  Parameter<std::map<std::string, uint64_t>> header_metadata_;
 
   // Networking settings
   Parameter<bool> use_hds_;              // Header-data split enabled
@@ -87,6 +90,9 @@ class NetConnectorAdvanced : public Operator {
   matx::tensor_t<sample_t, 3> rf_data;
   matx::tensor_t<RFMetadata, 1> rf_metadata;
   cudaStream_t proc_stream;
+
+  // Spoofed packet header device memory structure
+  RFPacketHeader* spoof_header_d;
 };  // NetConnectorAdvanced
 
 }  // namespace holoscan::ops

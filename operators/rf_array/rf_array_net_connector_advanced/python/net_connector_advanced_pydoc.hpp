@@ -48,6 +48,15 @@ num_samples : int
     Number of samples per output chunk.
 num_subchannels : int
     Number of IQ subchannels per sample time instance.
+spoof_header : bool, optional
+    Whether or not to ignore the packet header and spoof its metadata.
+packet_skip_bytes : int, optional
+    If spoofing packet header, number of bytes to skip at the beginning of each
+    packet before reading data.
+header_metadata : dict, optional
+    Metadata values to use in spoofed header. The ``sample_idx`` cannot be specified
+    since it varies per packet, but you can instead specify the ``start_sample_idx``
+    to give the sample index of the first sample in the first packet.
 batch_size : int, optional
     Batch size in packets for each processing epoch.
 max_packet_size : int, optional

@@ -17,33 +17,12 @@
 #include "rf_array/net_connector_common.h"
 #include "rf_array/rf_array.h"
 
-#if SPOOF_PACKET_DATA
-/**
- * This function converts the packet count to packet metadata. We just treat the
- * packet count as if all of the packets are arriving in order and write the the
- * metadata accordingly. This functionalitycan be useful when testing, where we
- * have a packet generator that isn't generating packets that use our data format.
- */
-__device__ __forceinline__ void gen_meta_from_pkt_cnt(RfPktHeader* meta, const uint64_t pkt_cnt,
-                                                      const uint16_t num_subchannels) {
-  meta->sample_idx = static_cast<uint64_t>(SPOOF_SAMPLES_PER_PKT * pkt_cnt);
-  meta->sample_rate_numerator = 64000000;
-  meta->sample_rate_denominator = 1;
-  meta->channel_idx = 0;
-  meta->num_subchannels = num_subchannels;
-  meta->pkt_samples = SPOOF_SAMPLES_PER_PKT;
-  meta->bits_per_int = 128;
-  meta->is_complex = 1;
-}
-#endif
-
-__global__ void place_packet_data_kernel(sample_t* out, RFMetadata* out_metadata,
-                                         const void* const* const __restrict__ in, int* sample_cnt,
-                                         bool* received_end, unsigned long long int* buffer_counter,
-                                         const uint16_t buffer_size, const uint32_t num_samples,
-                                         const uint16_t num_subchannels,
-                                         const uint32_t max_samples_per_packet,
-                                         const uint64_t total_pkts) {
+__global__ void place_packet_data_kernel(
+    sample_t* out, RFMetadata* out_metadata, const void* const* const __restrict__ in,
+    int* sample_cnt, bool* received_end, unsigned long long int* buffer_counter,
+    const uint16_t buffer_size, const uint32_t num_samples, const uint16_t num_subchannels,
+    const uint32_t max_samples_per_packet, const RFPacketHeader* spoof_header,
+    const uint64_t total_pkts, const uint16_t packet_skip_bytes) {
   const uint32_t sample_stride = static_cast<uint32_t>(num_subchannels);
   const uint32_t buffer_stride = sample_stride * num_samples;
   const uint32_t pkt_idx = blockIdx.x;
@@ -51,17 +30,20 @@ __global__ void place_packet_data_kernel(sample_t* out, RFMetadata* out_metadata
   // Warmup
   if (out == nullptr) return;
 
-#if SPOOF_PACKET_DATA
-  // Generate fake packet meta-data from the packet count
-  RfPktHeader meta_obj;
-  RfPktHeader* meta = &meta_obj;
-  gen_meta_from_pkt_cnt(meta, total_pkts + pkt_idx, num_subchannels);
-  const sample_t* samples = reinterpret_cast<const sample_t*>(
-      reinterpret_cast<const char*>(in[pkt_idx]) + SPOOF_SKIP_DATA_BYTES);
-#else
-  const RfPktHeader* meta = reinterpret_cast<const RfPktHeader*>(in[pkt_idx]);
-  const sample_t* samples = reinterpret_cast<const sample_t*>(meta + 1);
-#endif
+  const RFPacketHeader* meta;
+  const sample_t* samples;
+  if (spoof_header == nullptr) {
+    meta = reinterpret_cast<const RFPacketHeader*>(in[pkt_idx]);
+    samples = reinterpret_cast<const sample_t*>(meta + 1);
+  } else {
+    // Use spoofed header and generate sample index from the packet count, assuming
+    // all of the packets are arriving in order
+    RFPacketHeader meta_obj = *spoof_header;
+    meta_obj.sample_idx += static_cast<uint64_t>(meta_obj.pkt_samples * (total_pkts + pkt_idx));
+    meta = &meta_obj;
+    samples = reinterpret_cast<const sample_t*>(reinterpret_cast<const char*>(in[pkt_idx]) +
+                                                packet_skip_bytes);
+  }
 
   uint64_t global_sample_idx = meta->sample_idx;
   const uint32_t pkt_samples = min(meta->pkt_samples, max_samples_per_packet);
@@ -100,7 +82,7 @@ __global__ void place_packet_data_kernel(sample_t* out, RFMetadata* out_metadata
           out_metadata[buffer_idx].sample_idx = global_buffer_idx * num_samples;
           out_metadata[buffer_idx].sample_rate_numerator = meta->sample_rate_numerator;
           out_metadata[buffer_idx].sample_rate_denominator = meta->sample_rate_denominator;
-          out_metadata[buffer_idx].center_freq = 1e6 * meta->channel_idx;
+          out_metadata[buffer_idx].center_freq = 1e6 * meta->freq_idx;
         }
 
         // todo Smarter way than atomicAdd
@@ -122,7 +104,8 @@ void place_packet_data(sample_t* out, RFMetadata* out_metadata, void* const* con
                        int* sample_cnt, bool* received_end, unsigned long long int* buffer_counter,
                        const uint32_t num_pkts, const uint16_t buffer_size,
                        const uint32_t num_samples, const uint16_t num_subchannels,
-                       const uint32_t max_samples_per_packet, const uint64_t total_pkts,
+                       const uint32_t max_samples_per_packet, const RFPacketHeader* spoof_header,
+                       const uint64_t total_pkts, const uint16_t packet_skip_bytes,
                        cudaStream_t stream) {
   // Each block processes an individual packet
   place_packet_data_kernel<<<num_pkts, 128, buffer_size * sizeof(int), stream>>>(
@@ -136,5 +119,7 @@ void place_packet_data(sample_t* out, RFMetadata* out_metadata, void* const* con
       num_samples,
       num_subchannels,
       max_samples_per_packet,
-      total_pkts);
+      spoof_header,
+      total_pkts,
+      packet_skip_bytes);
 }

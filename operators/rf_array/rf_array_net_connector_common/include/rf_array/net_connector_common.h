@@ -16,19 +16,15 @@
  */
 #pragma once
 
+#include <map>
+#include <string>
+
 #include <linux/if_ether.h>
 #include <linux/udp.h>
 #include <netinet/ip.h>
 
 #include "holoscan/holoscan.hpp"
 #include "rf_array/rf_array.h"
-
-// Compiler option that allows us to spoof packet metadata. This functionality
-// can be useful when testing, where we have a packet generator that isn't
-// transmitting data that isn't generating packets that use our data format.
-#define SPOOF_PACKET_DATA true
-#define SPOOF_SAMPLES_PER_PKT 2048  // byte count must be less than 'max_packet_size' config
-#define SPOOF_SKIP_DATA_BYTES 0     // number of bytes to skip in actual packet to get to data
 
 // IPV4 UDP packet using Linux headers
 struct UDPIPV4Pkt {
@@ -39,11 +35,11 @@ struct UDPIPV4Pkt {
 } __attribute__((packed));
 
 // Packet header for RF signal
-struct RfPktHeader {
+struct RFPacketHeader {
   uint64_t sample_idx;
   uint64_t sample_rate_numerator;
   uint64_t sample_rate_denominator;
-  uint32_t channel_idx;
+  uint32_t freq_idx;
   uint32_t num_subchannels;
   uint32_t pkt_samples;
   uint16_t bits_per_int;
@@ -54,6 +50,28 @@ struct RfPktHeader {
   uint64_t reserved3;
   uint64_t reserved4;
 } __attribute__((__packed__));
+
+inline void spoofed_packet_header_from_map(RFPacketHeader* meta,
+                                           std::map<std::string, uint64_t> header_vals) {
+  // set default values for any that were not specified
+  header_vals.try_emplace("start_sample_idx", 0);
+  header_vals.try_emplace("sample_rate_numerator", 64000000);
+  header_vals.try_emplace("sample_rate_denominator", 1);
+  header_vals.try_emplace("freq_idx", 0);
+  header_vals.try_emplace("num_subchannels", 1);
+  header_vals.try_emplace("pkt_samples", 2048);
+  header_vals.try_emplace("bits_per_int", 16);
+  header_vals.try_emplace("is_complex", 1);
+
+  meta->sample_idx = static_cast<uint64_t>(header_vals.at("start_sample_idx"));
+  meta->sample_rate_numerator = static_cast<uint64_t>(header_vals.at("sample_rate_numerator"));
+  meta->sample_rate_denominator = static_cast<uint64_t>(header_vals.at("sample_rate_denominator"));
+  meta->freq_idx = static_cast<uint32_t>(header_vals.at("freq_idx"));
+  meta->num_subchannels = static_cast<uint32_t>(header_vals.at("num_subchannels"));
+  meta->pkt_samples = static_cast<uint32_t>(header_vals.at("pkt_samples"));
+  meta->bits_per_int = static_cast<uint16_t>(header_vals.at("bits_per_int"));
+  meta->is_complex = static_cast<unsigned>(header_vals.at("is_complex"));
+}
 
 // Tracks the status of filling an RF array
 struct BufferTracking {
@@ -163,5 +181,6 @@ void place_packet_data(sample_t* out, RFMetadata* out_metadata, void* const* con
                        int* sample_cnt, bool* received_end, unsigned long long int* buffer_counter,
                        const uint32_t num_pkts, const uint16_t buffer_size,
                        const uint32_t num_samples, const uint16_t num_subchannels,
-                       const uint32_t max_samples_per_packet, const uint64_t total_pkts,
+                       const uint32_t max_samples_per_packet, const RFPacketHeader* spoof_header,
+                       const uint64_t total_pkts, const uint16_t packet_skip_bytes,
                        cudaStream_t stream);

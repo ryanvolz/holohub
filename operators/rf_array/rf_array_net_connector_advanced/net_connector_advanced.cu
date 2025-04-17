@@ -39,6 +39,22 @@ void NetConnectorAdvanced::setup(OperatorSpec& spec) {
                        "Number of subchannels",
                        "Number of IQ subchannels per sample time instance",
                        {});
+  spec.param<bool>(spoof_header_,
+                   "spoof_header",
+                   "Spoof the RFMetadata header",
+                   "Whether or not to ignore the packet header and spoof its metadata",
+                   false);
+  spec.param<uint16_t>(packet_skip_bytes_,
+                       "packet_skip_bytes",
+                       "Number of bytes to skip",
+                       "If spoofing packet header, number of bytes to skip at the beginning of "
+                       "each packet before reading data",
+                       0);
+  spec.param<std::map<std::string, uint64_t>>(header_metadata_,
+                                              "header_metadata",
+                                              "Spoofed header values",
+                                              "Metadata values to use in spoofed header",
+                                              {});
 
   // Networking settings
   spec.param<bool>(use_hds_,
@@ -65,13 +81,14 @@ void NetConnectorAdvanced::setup(OperatorSpec& spec) {
 
 void NetConnectorAdvanced::initialize() {
   HOLOSCAN_LOG_INFO("NetConnectorAdvanced::initialize()");
+  register_converter<std::map<std::string, uint64_t>>();
   holoscan::Operator::initialize();
 
   cudaStreamCreateWithFlags(&proc_stream, cudaStreamNonBlocking);
 
   // Maximum number of RF samples (of num_subchannels I/Q samples) per packet
-  max_samples_per_packet =
-      (max_packet_size_.get() - sizeof(RfPktHeader)) / (num_subchannels_.get() * sizeof(sample_t));
+  max_samples_per_packet = (max_packet_size_.get() - sizeof(RFPacketHeader)) /
+                           (num_subchannels_.get() * sizeof(sample_t));
 
   HOLOSCAN_LOG_INFO("Max samples per packet: {}", max_samples_per_packet);
 
@@ -94,6 +111,30 @@ void NetConnectorAdvanced::initialize() {
     exit(1);
   }
 
+  size_t pkt_size;
+  if (spoof_header_.get()) {
+    RFPacketHeader* spoof_header_h;
+    cudaMallocHost((void**)&spoof_header_h, sizeof(RFPacketHeader));
+    spoofed_packet_header_from_map(spoof_header_h, header_metadata_.get());
+    uint32_t pkt_samples = spoof_header_h->pkt_samples;
+    pkt_size = sizeof(sample_t) * num_subchannels_.get() * pkt_samples + packet_skip_bytes_.get();
+    HOLOSCAN_LOG_WARN("Spoofing packet metadata, ignoring packet header.");
+    if (pkt_size > max_packet_size_.get()) {
+      HOLOSCAN_LOG_ERROR("Max packets size ({}) can't fit the expected samples ({})",
+                         max_packet_size_.get(),
+                         pkt_samples);
+      exit(1);
+    }
+    cudaMalloc((void**)&spoof_header_d, sizeof(RFPacketHeader));
+    cudaMemcpy((void*)spoof_header_d,
+               (void*)spoof_header_h,
+               sizeof(RFPacketHeader),
+               cudaMemcpyHostToDevice);
+    cudaFreeHost(spoof_header_h);
+  } else {
+    pkt_size = max_packet_size_.get();
+  }
+
   // Allocate memory and create CUDA streams for each concurrent batch
   for (int n = 0; n < num_concurrent; n++) {
     cudaMallocHost((void**)&h_dev_ptrs_[n], sizeof(void*) * batch_size_.get());
@@ -102,36 +143,24 @@ void NetConnectorAdvanced::initialize() {
     }
     if (!gpu_direct_.get()) {
       // host-pinned memory for full batch data that we put the packets into in CPU mode
-      cudaMallocHost(&full_batch_data_h_[n], batch_size_.get() * max_packet_size_.get());
+      cudaMallocHost(&full_batch_data_h_[n], batch_size_.get() * pkt_size);
       // populate the host-pinned device pointers since we know them ahead of time
       for (int p = 0; p < batch_size_.get(); p++) {
-        h_dev_ptrs_[n][p] = &full_batch_data_h_[n] + p * max_packet_size_.get();
+        h_dev_ptrs_[n][p] = &full_batch_data_h_[n] + p * pkt_size;
       }
     }
 
     cudaStreamCreateWithFlags(&streams_[n], cudaStreamNonBlocking);
     cudaEventCreate(&events_[n]);
     // Warmup
-    place_packet_data(nullptr, nullptr, nullptr, 0, 0, 0, 16, 16, 0, 0, 0, 0, streams_[n]);
+    place_packet_data(
+        nullptr, nullptr, nullptr, 0, 0, 0, 16, 16, 0, 0, 0, nullptr, 0, 0, streams_[n]);
     cudaStreamSynchronize(streams_[n]);
   }
 
   buffer_track = BufferTracking(buffer_size_.get());
   matx::make_tensor(rf_data, {buffer_size_.get(), num_samples_.get(), num_subchannels_.get()});
   matx::make_tensor(rf_metadata, {buffer_size_.get()});
-
-#if SPOOF_PACKET_DATA
-  // Compute packets delivered per pulse and max waveform ID based on parameters
-  const size_t spoof_pkt_size =
-      sizeof(sample_t) * num_subchannels_.get() * SPOOF_SAMPLES_PER_PKT + sizeof(RfPktHeader);
-  HOLOSCAN_LOG_WARN("Spoofing packet metadata, ignoring packet header.");
-  if (spoof_pkt_size > max_packet_size_.get()) {
-    HOLOSCAN_LOG_ERROR("Max packets size ({}) can't fit the expected samples ({})",
-                       max_packet_size_.get(),
-                       SPOOF_SAMPLES_PER_PKT);
-    exit(1);
-  }
-#endif
 
   HOLOSCAN_LOG_INFO("NetConnectorAdvanced::initialize() complete");
 }
@@ -144,13 +173,14 @@ void NetConnectorAdvanced::freeResources() {
     if (streams_[n]) { cudaStreamDestroy(streams_[n]); }
     if (events_[n]) { cudaEventDestroy(events_[n]); }
   }
-  if (buffer_track.sample_cnt_h) { cudaFreeHost(buffer_track.sample_cnt_h) };
-  if (buffer_track.sample_cnt_d) { cudaFree(buffer_track.sample_cnt_d) };
-  if (buffer_track.received_end_h) { cudaFreeHost(buffer_track.received_end_h) };
-  if (buffer_track.received_end_d) { cudaFree(buffer_track.received_end_d) };
-  if (buffer_track.counter_h) { cudaFreeHost(buffer_track.counter_h) };
-  if (buffer_track.counter_d) { cudaFree(buffer_track.counter_d) };
-  if (proc_stream) { cudaStreamDestroy(proc_stream) };
+  if (buffer_track.sample_cnt_h) { cudaFreeHost(buffer_track.sample_cnt_h); }
+  if (buffer_track.sample_cnt_d) { cudaFree(buffer_track.sample_cnt_d); }
+  if (buffer_track.received_end_h) { cudaFreeHost(buffer_track.received_end_h); }
+  if (buffer_track.received_end_d) { cudaFree(buffer_track.received_end_d); }
+  if (buffer_track.counter_h) { cudaFreeHost(buffer_track.counter_h); }
+  if (buffer_track.counter_d) { cudaFree(buffer_track.counter_d); }
+  if (proc_stream) { cudaStreamDestroy(proc_stream); }
+  if (spoof_header_d) { cudaFree(spoof_header_d); }
   HOLOSCAN_LOG_INFO("NetConnectorAdvanced::freeResources() complete");
 }
 
@@ -326,7 +356,9 @@ void NetConnectorAdvanced::compute(InputContext& op_input, OutputContext& op_out
                       num_samples_.get(),
                       num_subchannels_.get(),
                       max_samples_per_packet,
-                      ttl_pkts_recv_,  // only needed if spoofing packets
+                      spoof_header_d,
+                      ttl_pkts_recv_,            // only needed if spoofing packets
+                      packet_skip_bytes_.get(),  // only needed if spoofing packets
                       streams_[cur_idx]);
 
     cudaEventRecord(events_[cur_idx], streams_[cur_idx]);

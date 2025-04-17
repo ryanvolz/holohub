@@ -15,10 +15,13 @@
  * limitations under the License.
  */
 #include <cstdint>
+#include <map>
 #include <memory>
+#include <optional>
 #include <string>
 
 #include <pybind11/pybind11.h>
+#include <pybind11/stl.h>
 
 #include <holoscan/core/fragment.hpp>
 #include <holoscan/core/operator.hpp>
@@ -42,16 +45,23 @@ class PyNetConnectorBasic : public NetConnectorBasic {
 
   // Define a constructor that fully initializes the object.
   PyNetConnectorBasic(Fragment* fragment, const py::args& args, uint16_t buffer_size,
-                      uint32_t num_samples, uint16_t num_subchannels, uint32_t batch_size = 1000,
-                      uint16_t max_packet_size = 9000,
+                      uint32_t num_samples, uint16_t num_subchannels, bool spoof_header = false,
+                      uint16_t packet_skip_bytes = 0,
+                      std::optional<std::map<std::string, uint64_t>> header_metadata = std::nullopt,
+                      uint32_t batch_size = 1000, uint16_t max_packet_size = 9000,
                       const std::string& name = "net_connector_basic")
       : NetConnectorBasic(ArgList{
             Arg{"buffer_size", buffer_size},
             Arg{"num_samples", num_samples},
             Arg{"num_subchannels", num_subchannels},
+            Arg{"spoof_header", spoof_header},
+            Arg{"packet_skip_bytes", packet_skip_bytes},
             Arg{"batch_size", batch_size},
             Arg{"max_packet_size", max_packet_size},
         }) {
+    if (header_metadata.has_value()) {
+      this->add_arg(Arg{"header_metadata", header_metadata.value()});
+    }
     add_positional_condition_and_resource_args(this, args);
     name_ = name;
     fragment_ = fragment;
@@ -68,6 +78,9 @@ void bind_rf_array_net_connector_basic(py::module& m) {
                     uint16_t,
                     uint32_t,
                     uint16_t,
+                    bool,
+                    uint16_t,
+                    std::optional<std::map<std::string, uint64_t>>,
                     uint32_t,
                     uint16_t,
                     const std::string&>(),
@@ -75,6 +88,9 @@ void bind_rf_array_net_connector_basic(py::module& m) {
            "buffer_size"_a,
            "num_samples"_a,
            "num_subchannels"_a,
+           "spoof_header"_a = false,
+           "packet_skip_bytes"_a = 0,
+           "header_metadata"_a = py::none(),
            "batch_size"_a = 1000,
            "max_packet_size"_a = 9000,
            "name"_a = "net_connector_basic"s,

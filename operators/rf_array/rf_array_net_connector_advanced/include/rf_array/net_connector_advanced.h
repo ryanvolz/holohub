@@ -42,10 +42,14 @@ class NetConnectorAdvanced : public Operator {
   static constexpr int num_concurrent = 4;    // Number of concurrent batches processing
   static constexpr int MAX_ANO_BATCHES = 10;  // Batches from ANO for one app batch
 
-  // RF settings
+  // Array settings
   Parameter<uint16_t> buffer_size_;
   Parameter<uint32_t> num_samples_;
   Parameter<uint16_t> num_subchannels_;
+
+  // Packet header settings
+  Parameter<double> freq_idx_scaling_;
+  Parameter<double> freq_idx_offset_;
   Parameter<bool> spoof_header_;
   Parameter<uint16_t> packet_skip_bytes_;
   Parameter<std::map<std::string, uint64_t>> header_metadata_;

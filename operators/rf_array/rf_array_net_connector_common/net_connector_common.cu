@@ -21,8 +21,9 @@ __global__ void place_packet_data_kernel(
     sample_t* out, RFMetadata* out_metadata, const void* const* const __restrict__ in,
     int* sample_cnt, bool* received_end, unsigned long long int* buffer_counter,
     const uint16_t buffer_size, const uint32_t num_samples, const uint16_t num_subchannels,
-    const uint32_t max_samples_per_packet, const RFPacketHeader* spoof_header,
-    const uint64_t total_pkts, const uint16_t packet_skip_bytes) {
+    const uint32_t max_samples_per_packet, const double freq_idx_scaling,
+    const double freq_idx_offset, const RFPacketHeader* spoof_header, const uint64_t total_pkts,
+    const uint16_t packet_skip_bytes) {
   const uint32_t sample_stride = static_cast<uint32_t>(num_subchannels);
   const uint32_t buffer_stride = sample_stride * num_samples;
   const uint32_t pkt_idx = blockIdx.x;
@@ -82,7 +83,8 @@ __global__ void place_packet_data_kernel(
           out_metadata[buffer_idx].sample_idx = global_buffer_idx * num_samples;
           out_metadata[buffer_idx].sample_rate_numerator = meta->sample_rate_numerator;
           out_metadata[buffer_idx].sample_rate_denominator = meta->sample_rate_denominator;
-          out_metadata[buffer_idx].center_freq = 1e6 * meta->freq_idx;
+          out_metadata[buffer_idx].center_freq =
+              freq_idx_scaling * meta->freq_idx + freq_idx_offset;
         }
 
         // todo Smarter way than atomicAdd
@@ -104,7 +106,8 @@ void place_packet_data(sample_t* out, RFMetadata* out_metadata, void* const* con
                        int* sample_cnt, bool* received_end, unsigned long long int* buffer_counter,
                        const uint32_t num_pkts, const uint16_t buffer_size,
                        const uint32_t num_samples, const uint16_t num_subchannels,
-                       const uint32_t max_samples_per_packet, const RFPacketHeader* spoof_header,
+                       const uint32_t max_samples_per_packet, const double freq_idx_scaling,
+                       const double freq_idx_offset, const RFPacketHeader* spoof_header,
                        const uint64_t total_pkts, const uint16_t packet_skip_bytes,
                        cudaStream_t stream) {
   // Each block processes an individual packet
@@ -119,6 +122,8 @@ void place_packet_data(sample_t* out, RFMetadata* out_metadata, void* const* con
       num_samples,
       num_subchannels,
       max_samples_per_packet,
+      freq_idx_scaling,
+      freq_idx_offset,
       spoof_header,
       total_pkts,
       packet_skip_bytes);

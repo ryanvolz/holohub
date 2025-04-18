@@ -24,7 +24,7 @@ void NetConnectorBasic::setup(OperatorSpec& spec) {
   spec.input<std::shared_ptr<NetworkOpBurstParams>>("burst_in");
   spec.output<std::shared_ptr<RFArray<sample_t>>>("rf_out");
 
-  // RF settings
+  // Array settings
   spec.param<uint16_t>(buffer_size_,
                        "buffer_size",
                        "Size of RF buffer",
@@ -37,6 +37,21 @@ void NetConnectorBasic::setup(OperatorSpec& spec) {
                        "Number of subchannels",
                        "Number of IQ subchannels per sample time instance",
                        {});
+
+  // Packet header settings
+  spec.param<double>(
+      freq_idx_scaling_,
+      "freq_idx_scaling",
+      "Frequency scaling factor",
+      "Multiplier to apply to the frequency index from header metadata to calculate "
+      "the center frequency: center_freq = freq_idx_scaling * freq_idx + freq_idx_offset",
+      1);
+  spec.param<double>(freq_idx_offset_,
+                     "freq_idx_offset",
+                     "Frequency offset",
+                     "Additive offset to apply to the center frequency calculated from header "
+                     "metadata: center_freq = freq_idx_scaling * freq_idx + freq_idx_offset",
+                     0);
   spec.param<bool>(spoof_header_,
                    "spoof_header",
                    "Spoof the RFMetadata header",
@@ -135,7 +150,7 @@ void NetConnectorBasic::initialize() {
     cudaEventCreate(&events_[n]);
     // Warmup
     place_packet_data(
-        nullptr, nullptr, nullptr, 0, 0, 0, 16, 16, 0, 0, 0, nullptr, 0, 0, streams_[n]);
+        nullptr, nullptr, nullptr, 0, 0, 0, 16, 16, 0, 0, 0, 0, 0, nullptr, 0, 0, streams_[n]);
     cudaStreamSynchronize(streams_[n]);
   }
 
@@ -287,6 +302,8 @@ void NetConnectorBasic::compute(InputContext& op_input, OutputContext& op_output
                       num_samples_.get(),
                       num_subchannels_.get(),
                       max_samples_per_packet,
+                      freq_idx_scaling_.get(),
+                      freq_idx_offset_.get(),
                       spoof_header_d,
                       ttl_pkts_recv_,            // only needed if spoofing packets
                       packet_skip_bytes_.get(),  // only needed if spoofing packets

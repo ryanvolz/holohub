@@ -48,6 +48,12 @@ num_samples : int
     Number of samples per output chunk.
 num_subchannels : int
     Number of IQ subchannels per sample time instance.
+freq_idx_scaling : float
+    Multiplier to apply to the frequency index from header metadata to calculate
+    the center frequency: ``center_freq = freq_idx_scaling * freq_idx + freq_idx_offset``.
+freq_idx_offset : float
+    Additive offset to apply to the center frequency calculated from header
+    metadata: ``center_freq = freq_idx_scaling * freq_idx + freq_idx_offset``.
 spoof_header : bool, optional
     Whether or not to ignore the packet header and spoof its metadata.
 packet_skip_bytes : int, optional

@@ -60,10 +60,8 @@ class BasicNetworkPingRxOp : public Operator {
 
   void compute(InputContext& op_input, OutputContext&, ExecutionContext& context) override {
     auto in = op_input.receive<std::shared_ptr<NetworkOpBurstParams>>("burst_in").value();
-    auto val = *reinterpret_cast<int*>(in->data);
+    auto val = *reinterpret_cast<int*>(in->data.get());
     HOLOSCAN_LOG_INFO("Ping message received with value {}", val);
-
-    delete[] in->data;
 
     if (val == NUM_MSGS - 1) { GxfGraphInterrupt(context.context()); }
   }

@@ -75,7 +75,7 @@ void BasicConnectorOpRx::compute(InputContext& op_input,
   auto in = op_input.receive<std::shared_ptr<NetworkOpBurstParams>>("burst_in").value();
   num_rx += in->num_pkts;
 
-  uint8_t *buf_ptr = in->data;
+  uint8_t* buf_ptr = in->data.get();
   for (size_t i = 0; i < in->num_pkts; i++) {
     // Get packet and adjust pointer
     pkt_buf[i] = RFPacket(buf_ptr);
@@ -118,8 +118,6 @@ void BasicConnectorOpRx::compute(InputContext& op_input,
         samples_per_arr);
     }
   }
-
-  delete[] in->data;
 
   // Check if we can emit an array
   if (buffer_track.is_ready(samples_per_arr)) {

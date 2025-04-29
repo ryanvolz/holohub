@@ -121,9 +121,10 @@ PYBIND11_MODULE(_basic_network, m) {
            "data"_a,
            "num_pkts"_a,
            doc::BasicNetwork::doc_NetworkOpBurstParams_python)
-      .def_property_readonly(
-          "data",
-          [](const NetworkOpBurstParams& b) { return py::memoryview::from_memory(b.data, b.len); })
+      .def_property_readonly("data",
+                             [](const NetworkOpBurstParams& b) {
+                               return py::memoryview::from_memory(b.data.get(), b.len);
+                             })
       .def_readonly("num_pkts", &NetworkOpBurstParams::num_pkts);
 
   py::class_<BasicNetworkOpRx, PyBasicNetworkOpRx, Operator, std::shared_ptr<BasicNetworkOpRx>>(

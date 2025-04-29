@@ -109,21 +109,18 @@ void BasicNetworkOpTx::compute(InputContext& op_input, [[maybe_unused]] OutputCo
     auto pkt_size = std::min(msg->len, static_cast<uint32_t>(max_payload_size_.get()));
     if (l4_proto_ == L4Proto::UDP) {
       sent = sendto(sockfd_,
-                        msg->data + byte_cnt_,
-                        static_cast<size_t>(pkt_size),
-                        MSG_DONTWAIT,
-                        reinterpret_cast<const struct sockaddr*>(&server_addr_),
-                        sizeof(server_addr_));
+                    &msg->data[byte_cnt_],
+                    static_cast<size_t>(pkt_size),
+                    MSG_DONTWAIT,
+                    reinterpret_cast<const struct sockaddr*>(&server_addr_),
+                    sizeof(server_addr_));
 
       if (sent == -1) {
         HOLOSCAN_LOG_ERROR("Error while sending UDP packet: {}", errno);
         continue;
       }
     } else if (l4_proto_ == L4Proto::TCP) {
-      sent = send(sockfd_,
-                        msg->data + byte_cnt_,
-                        static_cast<size_t>(pkt_size),
-                        MSG_DONTWAIT);
+      sent = send(sockfd_, &msg->data[byte_cnt_], static_cast<size_t>(pkt_size), MSG_DONTWAIT);
 
       if (sent == -1) {
         HOLOSCAN_LOG_ERROR("Error while sending TCP packet: {}", errno);
@@ -138,8 +135,6 @@ void BasicNetworkOpTx::compute(InputContext& op_input, [[maybe_unused]] OutputCo
   }
 
   byte_cnt_ = 0;
-
-  delete[] msg->data;
 
   HOLOSCAN_LOG_DEBUG("BasicNetworkOpTx::compute done");
 }

@@ -16,15 +16,21 @@
 
 #pragma once
 
+#include <memory>
+
 enum class L4Proto {
   TCP,
   UDP
 };
 
 struct NetworkOpBurstParams {
-  NetworkOpBurstParams(uint8_t *data, uint32_t len, uint32_t num_pkts) :
-    data(data), len(len), num_pkts(num_pkts) {}
-  uint8_t *data;
+  NetworkOpBurstParams(std::shared_ptr<uint8_t[]>& data, uint32_t len, uint32_t num_pkts)
+      : data(data), len(len), num_pkts(num_pkts) {}
+  NetworkOpBurstParams(std::shared_ptr<uint8_t[]>&& data, uint32_t len, uint32_t num_pkts)
+      : data(std::move(data)), len(len), num_pkts(num_pkts) {}
+  NetworkOpBurstParams(uint8_t* data, uint32_t len, uint32_t num_pkts)
+      : data(std::shared_ptr<uint8_t[]>(data)), len(len), num_pkts(num_pkts) {}
+  std::shared_ptr<uint8_t[]> data;
   uint32_t len;
   uint32_t num_pkts;
 };

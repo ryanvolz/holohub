@@ -269,10 +269,7 @@ void NetConnectorBasic::compute(InputContext& op_input, OutputContext& op_output
 
   // FIXME: we don't ensure that writing to full_batch_data_h_[cur_idx] doesn't overrun
   // the amount of memory that we allocated
-  memcpy((char*)full_batch_data_h_[cur_idx] + burst_offset, burst->data, burst->len);
-
-  // free packets in burst
-  delete[] burst->data;
+  memcpy((char*)full_batch_data_h_[cur_idx] + burst_offset, burst->data.get(), burst->len);
 
   ttl_bytes_recv_ += burst->len;
   aggr_pkts_recv_ += burst->num_pkts;

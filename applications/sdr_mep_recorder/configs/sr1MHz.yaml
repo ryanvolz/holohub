@@ -51,8 +51,6 @@ rx_params:
     is_complex: 1
 
 basic_network:
-  # (batch_size * (max_payload_size + 42)) should be larger than OS receive buffer (e.g. rmem_default)
-  # so operator can fully drain the buffer in one compute() call
   batch_size: *batch_size # Number of packets in a batch
   max_payload_size: *max_packet_size # Maximum payload size
   dst_port: 60133 # UDP destination port for packets

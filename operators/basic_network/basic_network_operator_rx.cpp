@@ -108,7 +108,7 @@ void BasicNetworkOpRx::compute([[maybe_unused]] InputContext&, OutputContext& op
     connected_ = true;
   }
 
-  if (byte_cnt_ == 0) { pkt_buf = new uint8_t[max_payload_size_.get() * batch_size_.get()]; }
+  if (pkt_buf == nullptr) { pkt_buf = new uint8_t[max_payload_size_.get() * batch_size_.get()]; }
 
   while (pkts_in_batch_ < batch_size_.get()) {
     int n;
@@ -136,6 +136,7 @@ void BasicNetworkOpRx::compute([[maybe_unused]] InputContext&, OutputContext& op
   }
 
   auto msg = std::make_shared<NetworkOpBurstParams>(pkt_buf, byte_cnt_, pkts_in_batch_);
+  pkt_buf = nullptr;
   byte_cnt_ = 0;
   pkts_in_batch_ = 0;
 

@@ -33,10 +33,10 @@ pipeline:
   resample2: true
 
 rx_params:
-  batch_size: &batch_size 1250 # Number of packets to process at once into tensor data
+  batch_size: &batch_size 6250 # Number of packets to process at once into tensor data
   max_packet_size: &max_packet_size 8256
   num_subchannels: &num_subchannels 1 # Number of IQ subchannels of data that form a sample
-  num_samples: &rx_chunk_size 2560000 # Number of samples to output as a single chunk, must fit one batch of packets
+  num_samples: &rx_chunk_size 12800000 # Number of samples to output as a single chunk, must fit one batch of packets
   buffer_size: 10 # Number of num_samples chunks to store in the rx buffer
   spoof_header: true
   packet_skip_bytes: 0
@@ -51,6 +51,8 @@ rx_params:
     is_complex: 1
 
 basic_network:
+  # (batch_size * (max_payload_size + 42)) should be larger than OS receive buffer (e.g. rmem_default)
+  # so operator can fully drain the buffer in one compute() call
   batch_size: *batch_size # Number of packets in a batch
   max_payload_size: *max_packet_size # Maximum payload size
   dst_port: 60133 # UDP destination port for packets
@@ -187,7 +189,7 @@ ResamplePoly0:
     ]
 
 ResamplePoly1:
-  chunk_size: 640000
+  chunk_size: 3200000
   num_subchannels: *num_subchannels
   up: 1
   down: 4
@@ -261,7 +263,7 @@ ResamplePoly1:
     ]
 
 ResamplePoly2:
-  chunk_size: 160000
+  chunk_size: 800000
   num_subchannels: *num_subchannels
   up: 1
   down: 4
@@ -783,7 +785,7 @@ ResamplePoly2:
     ]
 
 DigitalRFSink0:
-  chunk_size: &drf_chunk_size 40000
+  chunk_size: &drf_chunk_size 200000
   num_subchannels: *num_subchannels
   channel_dir: /data/ringbuffer/mep/sr1MHz
   uuid: mep_pipeline_sr1MHz

@@ -175,7 +175,7 @@ def main():
         prog="sdr_mep_recorder",
         description="Process and record RF data for the SpectrumX Mobile Experiment Platform (MEP)",
     )
-    parser.add_argument("config_file", default="mep.yaml")
+    parser.add_argument("config_file", default="sr16MHz.yaml")
     args = parser.parse_args()
 
     logging.basicConfig(level=os.environ.get("HOLOSCAN_LOG_LEVEL", "WARN").upper())

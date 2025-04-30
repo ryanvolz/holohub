@@ -120,7 +120,7 @@ int main(int argc, char** argv) {
 
   // Get the configuration
   if (argc < 2) {
-    HOLOSCAN_LOG_ERROR("Usage: {} [mep.yaml]", argv[0]);
+    HOLOSCAN_LOG_ERROR("Usage: {} [sr16MHz.yaml]", argv[0]);
     return -1;
   }
 

@@ -353,11 +353,11 @@ void NetConnectorAdvanced::compute(InputContext& op_input, OutputContext& op_out
                        batch_size_.get());
     do {
       free_bufs_and_emit_arrays(op_output);
-      if (out_q.size() == num_concurrent) {
+      if (out_q.size() >= num_concurrent) {
         HOLOSCAN_LOG_ERROR("Fell behind in processing on GPU!");
         cudaStreamSynchronize(streams_[cur_idx]);
       }
-    } while (out_q.size() == num_concurrent);
+    } while (out_q.size() >= num_concurrent);
 
     // Copy packet I/Q contents to appropriate location in 'rf_data'
     place_packet_data(rf_data.Data(),

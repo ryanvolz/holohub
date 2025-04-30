@@ -194,15 +194,14 @@ void DigitalRFSink<sampleType>::compute(InputContext& op_input, OutputContext& o
     writer_initialized = true;
   }
 
-  if (copy_q.size() == num_concurrent) {
-    // copy buffers filled before we could clear any of them and write the array
-    HOLOSCAN_LOG_ERROR("Fell behind in copying arrays from GPU for writing with Digital RF!");
-    // wait until the oldest copy is done and we can write the next array
-    cudaEventSynchronize(copy_q.front().event);
-  }
-
   while (copy_q.size() > 0) {
     const auto next_msg = copy_q.front();
+    if (copy_q.size() >= num_concurrent) {
+      // copy buffers filled before we could clear any of them and write the array
+      HOLOSCAN_LOG_ERROR("Fell behind in copying arrays from GPU for writing with Digital RF!");
+      // wait until the oldest copy is done and we can write the next array
+      cudaEventSynchronize(next_msg.event);
+    }
     if (cudaEventQuery(next_msg.event) == cudaSuccess) {
       HOLOSCAN_LOG_DEBUG("Buffer {}: Writing {} samples @ {}",
                          next_msg.buffer_idx,

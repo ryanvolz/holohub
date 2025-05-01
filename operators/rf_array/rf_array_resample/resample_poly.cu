@@ -24,7 +24,11 @@ namespace holoscan::ops {
 
 // ----- ResamplePoly ---------------------------------------------------
 void ResamplePoly::setup(OperatorSpec& spec) {
-  spec.input<std::shared_ptr<RFArray<complex_t>>>("rf_in");
+  // RFArray inputs need a higher capacity in case they are connected to network connector
+  // which can put multiple messages into the buffer
+  spec.input<std::shared_ptr<RFArray<complex_t>>>("rf_in").connector(
+      holoscan::IOSpec::ConnectorType::kDoubleBuffer,
+      holoscan::Arg("capacity", static_cast<uint64_t>(100)));
   spec.output<std::shared_ptr<RFArray<complex_t>>>("rf_out");
   spec.param<uint32_t>(
       chunk_size, "chunk_size", "Chunk size", "Number of samples to operate on in one chunk", {});

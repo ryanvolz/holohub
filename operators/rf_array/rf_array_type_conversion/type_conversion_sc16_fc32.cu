@@ -25,7 +25,11 @@ namespace holoscan::ops {
 
 // ----- TypeConversionComplexIntToFloat ---------------------------------------------------
 void TypeConversionComplexIntToFloat::setup(OperatorSpec& spec) {
-  spec.input<std::shared_ptr<RFArray<sample_t>>>("rf_in");
+  // RFArray inputs need a higher capacity in case they are connected to network connector
+  // which can put multiple messages into the buffer
+  spec.input<std::shared_ptr<RFArray<sample_t>>>("rf_in").connector(
+      holoscan::IOSpec::ConnectorType::kDoubleBuffer,
+      holoscan::Arg("capacity", static_cast<uint64_t>(100)));
   spec.output<std::shared_ptr<RFArray<complex_t>>>("rf_out");
 }
 

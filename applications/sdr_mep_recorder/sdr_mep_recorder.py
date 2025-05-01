@@ -178,7 +178,11 @@ def main():
     parser.add_argument("config_file", default="sr16MHz.yaml")
     args = parser.parse_args()
 
-    logging.basicConfig(level=os.environ.get("HOLOSCAN_LOG_LEVEL", "WARN").upper())
+    env_log_level = os.environ.get("HOLOSCAN_LOG_LEVEL", "WARN").upper()
+    if env_log_level == "TRACE":
+        # TRACE exists for holoscan, but not in Python, so substitute with DEBUG
+        env_log_level = "DEBUG"
+    logging.basicConfig(level=env_log_level)
 
     config_path = pathlib.Path(args.config_file)
     if not config_path.exists():

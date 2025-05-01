@@ -31,7 +31,11 @@ namespace holoscan::ops {
 // ----- DigitalRFSink ---------------------------------------------------
 template <typename sampleType>
 void DigitalRFSink<sampleType>::setup(OperatorSpec& spec) {
-  spec.input<std::shared_ptr<RFArray<sampleType>>>("rf_in");
+  // RFArray inputs need a higher capacity in case they are connected to network connector
+  // which can put multiple messages into the buffer
+  spec.input<std::shared_ptr<RFArray<sampleType>>>("rf_in").connector(
+      holoscan::IOSpec::ConnectorType::kDoubleBuffer,
+      holoscan::Arg("capacity", static_cast<uint64_t>(100)));
   spec.param<std::string>(channel_dir,
                           "channel_dir",
                           "Channel directory",

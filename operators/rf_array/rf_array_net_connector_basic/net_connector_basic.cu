@@ -22,7 +22,9 @@ namespace holoscan::ops {
 
 void NetConnectorBasic::setup(OperatorSpec& spec) {
   spec.input<std::shared_ptr<NetworkOpBurstParams>>("burst_in");
-  spec.output<std::shared_ptr<RFArray<sample_t>>>("rf_out");
+  spec.output<std::shared_ptr<RFArray<sample_t>>>("rf_out").connector(
+      holoscan::IOSpec::ConnectorType::kDoubleBuffer,
+      holoscan::Arg("capacity", static_cast<uint64_t>(100)));
 
   // Array settings
   spec.param<uint16_t>(buffer_size_,
@@ -95,21 +97,21 @@ void NetConnectorBasic::initialize() {
 
   HOLOSCAN_LOG_INFO("Max samples per packet: {}", max_samples_per_packet);
 
-  if (max_samples_per_packet * batch_size_.get() > num_samples_.get()) {
+  if (max_samples_per_packet * batch_size_.get() > num_samples_.get() * buffer_size_.get()) {
     HOLOSCAN_LOG_ERROR(
-        "Specified packet batch_size could fill more than one RF array, but at most one array can "
-        "be produced per compute() call. Increase num_samples to at least {}, or decrease "
-        "batch_size to at most {}",
+        "Specified packet batch_size produces more samples than can fit in the specified sample "
+        "buffer (num_samples * buffer_size). Increase num_samples * buffer_size to at least {}, or "
+        "decrease batch_size to at most {}",
         max_samples_per_packet * batch_size_.get(),
-        num_samples_.get() / max_samples_per_packet);
+        num_samples_.get() * buffer_size_.get() / max_samples_per_packet);
     exit(1);
   }
 
   // Total number of I/Q samples per array
   samples_per_arr = num_samples_.get() * num_subchannels_.get();
 
-  size_t pkt_size;
   if (spoof_header_.get()) {
+    uint16_t pkt_size;
     RFPacketHeader* spoof_header_h;
     cudaMallocHost((void**)&spoof_header_h, sizeof(RFPacketHeader));
     spoofed_packet_header_from_map(spoof_header_h, header_metadata_.get());
@@ -122,28 +124,28 @@ void NetConnectorBasic::initialize() {
                          pkt_samples);
       exit(1);
     }
+    // override max_packet_size_ since we know the fixed value
+    max_packet_size_ = pkt_size;
     cudaMalloc((void**)&spoof_header_d, sizeof(RFPacketHeader));
     cudaMemcpy((void*)spoof_header_d,
                (void*)spoof_header_h,
                sizeof(RFPacketHeader),
                cudaMemcpyHostToDevice);
     cudaFreeHost(spoof_header_h);
-  } else {
-    pkt_size = max_packet_size_.get();
   }
 
   // Allocate memory and create CUDA streams for each concurrent batch
   for (int n = 0; n < num_concurrent; n++) {
     cudaMallocHost((void**)&h_dev_ptrs_[n], sizeof(void*) * batch_size_.get());
     // host-pinned memory for full batch data that we put the packets into in CPU mode
-    cudaMallocHost(&full_batch_data_h_[n], batch_size_.get() * pkt_size);
+    cudaMallocHost(&full_batch_data_h_[n], batch_size_.get() * max_packet_size_.get());
     // populate the host-pinned device pointers since we know them ahead of time
     // (we have to assume that all packets are the same size because the basic network
     //  operator packs them all together in a burst and leaves no way to separate them
     //  except by parsing a payload header, which we don't want to do on the CPU)
     for (int p = 0; p < batch_size_.get(); p++) {
-      h_dev_ptrs_[n][p] =
-          reinterpret_cast<void*>(reinterpret_cast<char*>(full_batch_data_h_[n]) + p * pkt_size);
+      h_dev_ptrs_[n][p] = reinterpret_cast<void*>(reinterpret_cast<char*>(full_batch_data_h_[n]) +
+                                                  p * max_packet_size_.get());
     }
 
     cudaStreamCreateWithFlags(&streams_[n], cudaStreamNonBlocking);
@@ -264,69 +266,76 @@ void NetConnectorBasic::compute(InputContext& op_input, OutputContext& op_output
    * the GPU will occur later (copying each packet to GPU directly would be too expensive).
    */
 
-  // Calculate offset for the burst
-  auto burst_offset = aggr_pkts_recv_ * max_packet_size_.get();
+  auto burst_pkts_remaining = burst->num_pkts;
+  // FIXME: assuming all packets are the same size, see also: filling h_dev_ptrs_ in initialize()
+  auto pkt_size = burst->len / burst->num_pkts;
 
-  // FIXME: we don't ensure that writing to full_batch_data_h_[cur_idx] doesn't overrun
-  // the amount of memory that we allocated
-  memcpy((char*)full_batch_data_h_[cur_idx] + burst_offset, burst->data, burst->len);
+  while (burst_pkts_remaining > 0) {
+    auto num_pkts_to_copy =
+        std::min(burst_pkts_remaining, static_cast<uint32_t>(batch_size_.get() - aggr_pkts_recv_));
+    auto copy_len = num_pkts_to_copy * pkt_size;
+    auto batch_offset = aggr_pkts_recv_ * pkt_size;
+    memcpy((char*)full_batch_data_h_[cur_idx] + batch_offset, burst->data, copy_len);
+
+    ttl_bytes_recv_ += copy_len;
+    aggr_pkts_recv_ += num_pkts_to_copy;
+    burst_pkts_remaining -= num_pkts_to_copy;
+
+    // Once we've aggregated enough packets, do some work
+    if (aggr_pkts_recv_ >= batch_size_.get()) {
+      HOLOSCAN_LOG_DEBUG(
+          "{} packets collected exceeding batch size of {}, packing into array on GPU",
+          aggr_pkts_recv_,
+          batch_size_.get());
+      do {
+        check_completed_and_emit_arrays(op_output);
+        if (out_q.size() >= num_concurrent) {
+          HOLOSCAN_LOG_ERROR("Fell behind in processing on GPU!");
+          cudaStreamSynchronize(streams_[cur_idx]);
+        }
+      } while (out_q.size() >= num_concurrent);
+
+      // Copy packet I/Q contents to appropriate location in 'rf_data'
+      place_packet_data(rf_data.Data(),
+                        rf_metadata.Data(),
+                        h_dev_ptrs_[cur_idx],
+                        buffer_track.sample_cnt_d,
+                        buffer_track.received_end_d,
+                        buffer_track.counter_d,
+                        aggr_pkts_recv_,
+                        buffer_size_.get(),
+                        num_samples_.get(),
+                        num_subchannels_.get(),
+                        max_samples_per_packet,
+                        freq_idx_scaling_.get(),
+                        freq_idx_offset_.get(),
+                        spoof_header_d,
+                        ttl_pkts_recv_,            // only needed if spoofing packets
+                        packet_skip_bytes_.get(),  // only needed if spoofing packets
+                        streams_[cur_idx]);
+
+      cudaEventRecord(events_[cur_idx], streams_[cur_idx]);
+      cur_msg_.stream = streams_[cur_idx];
+      cur_msg_.evt = events_[cur_idx];
+      out_q.push(cur_msg_);
+      cur_msg_.num_batches = 0;
+
+      ttl_pkts_recv_ += aggr_pkts_recv_;
+
+      if (cudaGetLastError() != cudaSuccess) {
+        HOLOSCAN_LOG_ERROR(
+            "CUDA error dispatching batch from queue number {} after {} total packets received",
+            cur_idx,
+            ttl_pkts_recv_);
+        exit(1);
+      }
+      aggr_pkts_recv_ = 0;
+      cur_idx = (++cur_idx % num_concurrent);
+    }
+  }
 
   // free packets in burst
   delete[] burst->data;
-
-  ttl_bytes_recv_ += burst->len;
-  aggr_pkts_recv_ += burst->num_pkts;
-
-  // Once we've aggregated enough packets, do some work
-  if (aggr_pkts_recv_ >= batch_size_.get()) {
-    HOLOSCAN_LOG_DEBUG("{} packets collected exceeding batch size of {}, packing into array on GPU",
-                       aggr_pkts_recv_,
-                       batch_size_.get());
-    do {
-      check_completed_and_emit_arrays(op_output);
-      if (out_q.size() >= num_concurrent) {
-        HOLOSCAN_LOG_ERROR("Fell behind in processing on GPU!");
-        cudaStreamSynchronize(streams_[cur_idx]);
-      }
-    } while (out_q.size() >= num_concurrent);
-
-    // Copy packet I/Q contents to appropriate location in 'rf_data'
-    place_packet_data(rf_data.Data(),
-                      rf_metadata.Data(),
-                      h_dev_ptrs_[cur_idx],
-                      buffer_track.sample_cnt_d,
-                      buffer_track.received_end_d,
-                      buffer_track.counter_d,
-                      aggr_pkts_recv_,
-                      buffer_size_.get(),
-                      num_samples_.get(),
-                      num_subchannels_.get(),
-                      max_samples_per_packet,
-                      freq_idx_scaling_.get(),
-                      freq_idx_offset_.get(),
-                      spoof_header_d,
-                      ttl_pkts_recv_,            // only needed if spoofing packets
-                      packet_skip_bytes_.get(),  // only needed if spoofing packets
-                      streams_[cur_idx]);
-
-    cudaEventRecord(events_[cur_idx], streams_[cur_idx]);
-    cur_msg_.stream = streams_[cur_idx];
-    cur_msg_.evt = events_[cur_idx];
-    out_q.push(cur_msg_);
-    cur_msg_.num_batches = 0;
-
-    ttl_pkts_recv_ += aggr_pkts_recv_;
-
-    if (cudaGetLastError() != cudaSuccess) {
-      HOLOSCAN_LOG_ERROR(
-          "CUDA error dispatching batch from queue number {} after {} total packets received",
-          cur_idx,
-          ttl_pkts_recv_);
-      exit(1);
-    }
-    aggr_pkts_recv_ = 0;
-    cur_idx = (++cur_idx % num_concurrent);
-  }
 }
 
 void NetConnectorBasic::stop() {

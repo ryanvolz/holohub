@@ -45,4 +45,5 @@ endif()
 install(
     TARGETS
       rf_array_net_connector_basic
+    COMPONENT rf_array-cpp
 )

@@ -40,4 +40,5 @@ endif()
 install(
     TARGETS
       rf_array_resample_poly
+    COMPONENT rf_array-cpp
 )

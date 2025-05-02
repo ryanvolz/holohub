@@ -40,4 +40,5 @@ endif()
 install(
     TARGETS
       rf_array_rotator_scheduled
+    COMPONENT rf_array-cpp
 )

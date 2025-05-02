@@ -40,4 +40,5 @@ endif()
 install(
     TARGETS
       rf_array_type_conversion_sc16_fc32
+    COMPONENT rf_array-cpp
 )

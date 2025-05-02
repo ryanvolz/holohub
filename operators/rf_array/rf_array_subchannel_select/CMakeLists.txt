@@ -40,4 +40,5 @@ endif()
 install(
     TARGETS
       rf_array_subchannel_select
+    COMPONENT rf_array-cpp
 )

@@ -50,4 +50,5 @@ endif()
 install(
     TARGETS
       rf_array_digital_rf_sink
+    COMPONENT rf_array-cpp
 )

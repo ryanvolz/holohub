@@ -52,3 +52,14 @@ add_custom_target(sdr_mep_recorder_configs
     ${SDR_MEP_RECORDER_CONFIG_FILES}
 )
 add_dependencies(sdr_mep_recorder sdr_mep_recorder_configs)
+
+install(PROGRAMS sdr_mep_recorder.py
+        TYPE BIN
+        COMPONENT sdr_mep_recorder
+)
+
+install(DIRECTORY configs/
+        DESTINATION share/holoscan/sdr_mep_recorder/configs/
+        COMPONENT sdr_mep_recorder
+        FILES_MATCHING PATTERN "*.yaml"
+)

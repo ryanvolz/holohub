@@ -24,6 +24,7 @@ holohub_configure_deb(
   COMPONENTS
     basic_network-cpp
     basic_network-py
+    C  # libdigital_rf
     rf_array-cpp
     rf_array-py
     sdr_mep_recorder

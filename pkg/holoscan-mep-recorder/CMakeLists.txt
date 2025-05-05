@@ -28,5 +28,5 @@ holohub_configure_deb(
     rf_array-cpp
     rf_array-py
     sdr_mep_recorder
-  DEPENDS "holoscan (>= 3.0), holoscan (<< 4.0)"
+  DEPENDS "holoscan (>= 2.5), holoscan (<< 4.0)"
 )

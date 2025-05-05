@@ -59,7 +59,7 @@ install(PROGRAMS sdr_mep_recorder.py
 )
 
 install(DIRECTORY configs/
-        DESTINATION share/holoscan/sdr_mep_recorder/configs/
+        DESTINATION share/sdr_mep_recorder/configs/
         COMPONENT sdr_mep_recorder
         FILES_MATCHING PATTERN "*.yaml"
 )

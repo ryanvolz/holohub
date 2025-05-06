@@ -99,92 +99,88 @@ class App(holoscan.core.Application):
         )
 
         net_connector_rx = rf_array.NetConnectorBasic(
-            self, name="net_connector_rx", **self.kwargs("rx_params")
+            self, name="net_connector_rx", **self.kwargs("packet")
         )
         self.add_flow(basic_net_rx, net_connector_rx, {("burst_out", "burst_in")})
 
         last_chunk_shape = (
-            self.kwargs("rx_params")["num_samples"],
-            self.kwargs("rx_params")["num_subchannels"],
+            self.kwargs("packet")["num_samples"],
+            self.kwargs("packet")["num_subchannels"],
         )
         last_op = net_connector_rx
 
-        if self.kwargs("pipeline")["subchannel_select0"]:
-            subchannel_select0 = rf_array.SubchannelSelect_sc16(
-                self, name="subchannel_select0", **self.kwargs("SubchannelSelect")
-            )
-            self.add_flow(last_op, subchannel_select0)
-            last_op = subchannel_select0
+        if self.kwargs("pipeline")["selector"]:
+            selector = rf_array.SubchannelSelect_sc16(self, name="selector", **self.kwargs("selector"))
+            self.add_flow(last_op, selector)
+            last_op = selector
             last_chunk_shape = (
                 last_chunk_shape[0],
-                len(self.kwargs("SubchannelSelect")["subchannel_idx"]),
+                len(self.kwargs("selector")["subchannel_idx"]),
             )
 
-        if self.kwargs("pipeline")["converter0"]:
-            converter0 = rf_array.TypeConversionComplexIntToFloat(
+        if self.kwargs("pipeline")["converter"]:
+            converter = rf_array.TypeConversionComplexIntToFloat(
                 self,
-                name="converter0",
+                name="converter",
             )
-            self.add_flow(last_op, converter0)
-            last_op = converter0
+            self.add_flow(last_op, converter)
+            last_op = converter
 
-            if self.kwargs("pipeline")["rotator0"]:
-                rotator0 = rf_array.RotatorScheduled(
-                    self, name="rotator0", **self.kwargs("RotatorScheduled0")
-                )
-                self.add_flow(last_op, rotator0)
-                last_op = rotator0
+            if self.kwargs("pipeline")["rotator"]:
+                rotator = rf_array.RotatorScheduled(self, name="rotator", **self.kwargs("rotator"))
+                self.add_flow(last_op, rotator)
+                last_op = rotator
 
-            if self.kwargs("pipeline")["resample0"]:
+            if self.kwargs("pipeline")["resampler0"]:
                 resample_kwargs = add_filter_coefs_kwargs(
-                    **add_chunk_kwargs(last_chunk_shape, **self.kwargs("ResamplePoly0"))
+                    **add_chunk_kwargs(last_chunk_shape, **self.kwargs("resampler0"))
                 )
-                resample0 = rf_array.ResamplePoly(self, name="resample0", **resample_kwargs)
-                self.add_flow(last_op, resample0)
-                last_op = resample0
+                resampler0 = rf_array.ResamplePoly(self, name="resampler0", **resample_kwargs)
+                self.add_flow(last_op, resampler0)
+                last_op = resampler0
                 last_chunk_shape = (
                     last_chunk_shape[0] * resample_kwargs["up"] // resample_kwargs["down"],
                     last_chunk_shape[1],
                 )
 
-            if self.kwargs("pipeline")["resample1"]:
+            if self.kwargs("pipeline")["resampler1"]:
                 resample_kwargs = add_filter_coefs_kwargs(
-                    **add_chunk_kwargs(last_chunk_shape, **self.kwargs("ResamplePoly1"))
+                    **add_chunk_kwargs(last_chunk_shape, **self.kwargs("resampler1"))
                 )
-                resample1 = rf_array.ResamplePoly(self, name="resample1", **resample_kwargs)
-                self.add_flow(last_op, resample1)
-                last_op = resample1
+                resampler1 = rf_array.ResamplePoly(self, name="resampler1", **resample_kwargs)
+                self.add_flow(last_op, resampler1)
+                last_op = resampler1
                 last_chunk_shape = (
                     last_chunk_shape[0] * resample_kwargs["up"] // resample_kwargs["down"],
                     last_chunk_shape[1],
                 )
 
-            if self.kwargs("pipeline")["resample2"]:
+            if self.kwargs("pipeline")["resampler2"]:
                 resample_kwargs = add_filter_coefs_kwargs(
-                    **add_chunk_kwargs(last_chunk_shape, **self.kwargs("ResamplePoly2"))
+                    **add_chunk_kwargs(last_chunk_shape, **self.kwargs("resampler2"))
                 )
-                resample2 = rf_array.ResamplePoly(self, name="resample2", **resample_kwargs)
-                self.add_flow(last_op, resample2)
-                last_op = resample2
+                resampler2 = rf_array.ResamplePoly(self, name="resampler2", **resample_kwargs)
+                self.add_flow(last_op, resampler2)
+                last_op = resampler2
                 last_chunk_shape = (
                     last_chunk_shape[0] * resample_kwargs["up"] // resample_kwargs["down"],
                     last_chunk_shape[1],
                 )
 
-            drf_sink0 = rf_array.DigitalRFSink_fc32(
+            drf_sink = rf_array.DigitalRFSink_fc32(
                 self,
-                name="drf_sink0",
-                **add_chunk_kwargs(last_chunk_shape, **self.kwargs("DigitalRFSink0")),
+                name="drf_sink",
+                **add_chunk_kwargs(last_chunk_shape, **self.kwargs("drf_sink")),
             )
-            self.add_flow(last_op, drf_sink0)
+            self.add_flow(last_op, drf_sink)
 
         else:
-            drf_sink0 = rf_array.DigitalRFSink_sc16(
+            drf_sink = rf_array.DigitalRFSink_sc16(
                 self,
-                name="drf_sink0",
-                **add_chunk_kwargs(last_chunk_shape, **self.kwargs("DigitalRFSink0")),
+                name="drf_sink",
+                **add_chunk_kwargs(last_chunk_shape, **self.kwargs("drf_sink")),
             )
-            self.add_flow(last_op, drf_sink0)
+            self.add_flow(last_op, drf_sink)
 
 
 def main():
@@ -203,8 +199,13 @@ def main():
 
     config_path = pathlib.Path(args.config_file)
     if not config_path.exists():
+        # configs in same directory as script (e.g. run from build directory)
         here = pathlib.Path(__file__).parent.absolute()
         config_path = here / config_path
+    if not config_path.exists():
+        # configs installed relative to script (e.g. run after installation to prefix)
+        here = pathlib.Path(__file__).parent.absolute()
+        config_path = here.parent / "share" / "sdr_mep_recorder" / "configs" / config_path
 
     app = App()
     app.config(str(config_path))

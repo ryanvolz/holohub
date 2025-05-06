@@ -43,7 +43,7 @@ class App : public holoscan::Application {
 
     // // sample flow 0
     // auto net_connector_rx0 =
-    //     make_operator<ops::NetConnectorAdvanced>("net_connector_rx0", from_config("rx_params"));
+    //     make_operator<ops::NetConnectorAdvanced>("net_connector_rx0", from_config("packet"));
     // add_flow(adv_net_rx, net_connector_rx0, {{"ch0", "burst_in"}});
     // last_op = net_connector_rx0;
 
@@ -52,58 +52,54 @@ class App : public holoscan::Application {
 
     // sample flow 0
     auto net_connector_rx0 =
-        make_operator<ops::NetConnectorBasic>("net_connector_rx0", from_config("rx_params"));
+        make_operator<ops::NetConnectorBasic>("net_connector_rx0", from_config("packet"));
     add_flow(basic_net_rx, net_connector_rx0, {{"burst_out", "burst_in"}});
     last_op = net_connector_rx0;
 
-    if (from_config("pipeline.subchannel_select0").as<bool>()) {
-      auto subchannel_select0 = make_operator<ops::SubchannelSelect<sample_t>>(
-          "subchannel_select0", from_config("SubchannelSelect"));
-      add_flow(last_op, subchannel_select0);
-      last_op = subchannel_select0;
+    if (from_config("pipeline.selector").as<bool>()) {
+      auto selector =
+          make_operator<ops::SubchannelSelect<sample_t>>("selector", from_config("selector"));
+      add_flow(last_op, selector);
+      last_op = selector;
     }
-    if (from_config("pipeline.converter0").as<bool>()) {
-      auto converter0 = make_operator<ops::TypeConversionComplexIntToFloat>("converter0");
-      add_flow(last_op, converter0);
-      last_op = converter0;
+    if (from_config("pipeline.converter").as<bool>()) {
+      auto converter = make_operator<ops::TypeConversionComplexIntToFloat>("converter");
+      add_flow(last_op, converter);
+      last_op = converter;
       branch_op = last_op;
 
-      if (from_config("pipeline.rotator0").as<bool>()) {
-        auto rotator0 =
-            make_operator<ops::RotatorScheduled>("rotator0", from_config("RotatorScheduled0"));
-        add_flow(branch_op, rotator0);
-        last_op = rotator0;
+      if (from_config("pipeline.rotator").as<bool>()) {
+        auto rotator = make_operator<ops::RotatorScheduled>("rotator", from_config("rotator"));
+        add_flow(branch_op, rotator);
+        last_op = rotator;
       }
 
-      if (from_config("pipeline.resample0").as<bool>()) {
-        auto resample0 =
-            make_operator<ops::ResamplePoly>("resample0", from_config("ResamplePoly0"));
-        add_flow(last_op, resample0);
-        last_op = resample0;
+      if (from_config("pipeline.resampler0").as<bool>()) {
+        auto resampler0 = make_operator<ops::ResamplePoly>("resampler0", from_config("resampler0"));
+        add_flow(last_op, resampler0);
+        last_op = resampler0;
       }
 
-      if (from_config("pipeline.resample1").as<bool>()) {
-        auto resample1 =
-            make_operator<ops::ResamplePoly>("resample1", from_config("ResamplePoly1"));
-        add_flow(last_op, resample1);
-        last_op = resample1;
+      if (from_config("pipeline.resampler1").as<bool>()) {
+        auto resampler1 = make_operator<ops::ResamplePoly>("resampler1", from_config("resampler1"));
+        add_flow(last_op, resampler1);
+        last_op = resampler1;
       }
 
-      if (from_config("pipeline.resample2").as<bool>()) {
-        auto resample2 =
-            make_operator<ops::ResamplePoly>("resample2", from_config("ResamplePoly2"));
-        add_flow(last_op, resample2);
-        last_op = resample2;
+      if (from_config("pipeline.resampler2").as<bool>()) {
+        auto resampler2 = make_operator<ops::ResamplePoly>("resampler2", from_config("resampler2"));
+        add_flow(last_op, resampler2);
+        last_op = resampler2;
       }
 
-      auto drf_sink0 =
-          make_operator<ops::DigitalRFSink<complex_t>>("drf_sink0", from_config("DigitalRFSink0"));
-      add_flow(last_op, drf_sink0);
+      auto drf_sink =
+          make_operator<ops::DigitalRFSink<complex_t>>("drf_sink", from_config("drf_sink"));
+      add_flow(last_op, drf_sink);
 
     } else {
-      auto drf_sink0 =
-          make_operator<ops::DigitalRFSink<sample_t>>("drf_sink0", from_config("DigitalRFSink0"));
-      add_flow(last_op, drf_sink0);
+      auto drf_sink =
+          make_operator<ops::DigitalRFSink<sample_t>>("drf_sink", from_config("drf_sink"));
+      add_flow(last_op, drf_sink);
     }
   }
 

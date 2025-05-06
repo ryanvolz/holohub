@@ -25,14 +25,14 @@ scheduler:
   stop_on_deadlock_timeout: 500
 
 pipeline:
-  subchannel_select0: false
-  converter0: true
-  rotator0: false
-  resample0: true
-  resample1: false
-  resample2: true
+  selector: false
+  converter: true
+  rotator: false
+  resampler0: true
+  resampler1: false
+  resampler2: true
 
-rx_params:
+packet:
   batch_size: &batch_size 6250 # Number of packets to process at once into tensor data
   max_packet_size: &max_packet_size 8256
   num_subchannels: &num_subchannels 1 # Number of IQ subchannels of data that form a sample
@@ -84,17 +84,17 @@ advanced_network:
               udp_src: 60133
               udp_dst: 60133
 
-SubchannelSelect:
+selector:
   subchannel_idx: [0]
 
-RotatorScheduled0:
+rotator:
   cycle_duration_secs: 1
   cycle_start_timestamp: 0
   schedule:
     - start: 0
       freq: 0e+6
 
-ResamplePoly0:
+resampler0:
   chunk_size: *rx_chunk_size
   num_subchannels: *num_subchannels
   up: 1
@@ -168,7 +168,7 @@ ResamplePoly0:
       -3.440782045348093414e-06,
     ]
 
-ResamplePoly2:
+resampler2:
   chunk_size: 6400000
   num_subchannels: *num_subchannels
   up: 1
@@ -690,8 +690,8 @@ ResamplePoly2:
       -3.283715415979136751e-07,
     ]
 
-DigitalRFSink0:
+drf_sink:
   chunk_size: &drf_chunk_size 1600000
   num_subchannels: *num_subchannels
-  channel_dir: /data/ringbuffer/mep/isr256MHz_sr32MHz
+  channel_dir: isr256MHz_sr32MHz
   uuid: mep_pipeline_isr256MHz_sr32MHz

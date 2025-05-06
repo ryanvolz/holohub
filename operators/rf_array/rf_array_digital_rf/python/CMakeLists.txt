@@ -29,3 +29,7 @@ target_sources(rf_array_python
 target_link_libraries(rf_array_python
     PUBLIC rf_array_digital_rf_sink
 )
+
+add_custom_target(rf_array_digital_rf_python_params
+    COMMAND ${CMAKE_COMMAND} -E copy_directory params ${HOLOHUB_PYTHON_MODULE_OUT_DIR}/rf_array/params
+)

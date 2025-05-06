@@ -15,81 +15,130 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import argparse
+import dataclasses
 import logging
 import os
 import pathlib
 import signal
 import sys
+import tempfile
 
 import holoscan
-import numpy as np
-import scipy.signal as ss
+import jsonargparse
+from jsonargparse.typing import NonNegativeInt, PositiveInt
 
 from holohub import basic_network, rf_array
+from holohub.rf_array.params import (
+    DigitalRFSinkParams,
+    NetConnectorBasicParams,
+    ResamplePolyParams,
+    RotatorScheduledParams,
+    SubchannelSelectParams,
+    add_chunk_kwargs,
+)
 
 logger = logging.getLogger("sdr_mep_recorder.py")
 
 
-def add_chunk_kwargs(chunk_shape, **kwargs):
-    kwargs["chunk_size"] = chunk_shape[0]
-    kwargs["num_subchannels"] = chunk_shape[1]
-    return kwargs
+@dataclasses.dataclass
+class SchedulerParams:
+    """Event-based scheduler parameters"""
+
+    worker_thread_number: PositiveInt = 8
+    """Number of worker threads"""
+    stop_on_deadlock: bool = True
+    """Whether the application will terminate if a deadlock occurs"""
+    stop_on_deadlock_timeout: float = 500
+    """Time (in ms) to wait before determining that a deadlock has occurred"""
 
 
-def add_filter_coefs_kwargs(**kwargs):
-    """Calculate and add filter coefficients (taps) to resampler keyword arguments
+@dataclasses.dataclass
+class PipelineParams:
+    """Pipeline configuration parameters"""
 
-    Parameters
-    ----------
-    outrate_cutoff : float, optional
-        Normalized low-pass filter cutoff frequency (half-amplitude point,
-        where the attenuation will be -6 dB) where a value of 1.0 indicates
-        half the *output* sampling rate. The value in Hertz is therefore
-        ``(outrate_cutoff * out_sample_rate / 2.0)``. The default is 1.0.
-    outrate_transition_width : float, optional
-        Normalized width of the transition region from pass band to stop band,
-        where a value of 1.0 indicates half the *output* sampling rate.
-        The value in Hertz is therefore
-        ``(outrate_transition_width * out_sample_rate / 2.0)``. The default
-        is 0.2.
-    attenuation_db : float, optional
-        Minimum attenuation of the low-pass filter stop band in dB.
-        The default is 100.
-    numtaps: int, optional
-        The length of the filter (number of taps), overriding the value
-        that would be used based on `outrate_transition_width` and
-        `attenuation_db`.
-    kaiser_beta : float, optional
-        The beta parameter for the Kaiser window (pi * alpha, controlling
-        main lobe width versus side lobe level), overriding the value that
-        would be used based on `outrate_transition_width` and
-        `attenuation_db`.
-    filter_coefs : list, optional
-        List of filter coefficients. If provided, these will be used instead
-        of ones that would be designed based on the above parameters.
+    selector: bool = False
+    "Enable / disable subchannel selector"
+    converter: bool = True
+    "Enable / disable complex int to float converter"
+    rotator: bool = False
+    "Enable / disable frequency rotator"
+    resampler0: bool = True
+    "Enable / disable the first stage resampler"
+    resampler1: bool = False
+    "Enable / disable the second stage resampler"
+    resampler2: bool = True
+    "Enable / disable the third stage resampler"
 
 
-    Returns
-    -------
-    dict
-        Keyword arguments including `filter_coefs` that can be passed to the
-        ResamplePoly operator.
-    """
-    outrate_cutoff = kwargs.pop("outrate_cutoff", 1.0)
-    cutoff = outrate_cutoff / kwargs["down"]
-    outrate_transition_width = kwargs.pop("outrate_transition_width", 0.2)
-    transition_width = outrate_transition_width / kwargs["down"]
-    attenuation_db = kwargs.pop("attenuation_db", 100)
-    numtaps, kaiser_beta = ss.kaiserord(attenuation_db, transition_width)
-    # round up to nearest even-order (Type I) filter
-    numtaps = int(np.ceil((numtaps - 1) / 2.0)) * 2 + 1
-    numtaps = kwargs.pop("numtaps", numtaps)
-    kaiser_beta = kwargs.pop("kaiser_beta", kaiser_beta)
-    if "filter_coefs" in kwargs:
-        return kwargs
-    kwargs["filter_coefs"] = ss.firwin(numtaps, cutoff, window=("kaiser", kaiser_beta))
-    return kwargs
+@dataclasses.dataclass
+class BasicNetworkOperatorParams:
+    """Basic network operator parameters"""
+
+    ip_addr: str = "192.168.4.1"
+    """IP address of interface to bind to"""
+    dst_port: NonNegativeInt = 60133
+    "UDP or TCP port to listen on"
+    l4_proto: str = "udp"
+    "Layer 4 protocol (udp or tcp)"
+    batch_size: PositiveInt = 6250
+    "Number of packets in batch"
+    max_payload_size: PositiveInt = 8256
+    "Maximum payload size expected from sender"
+
+
+def build_config_parser():
+    parser = jsonargparse.ArgumentParser(
+        prog="sdr_mep_recorder",
+        description="Process and record RF data for the SpectrumX Mobile Experiment Platform (MEP)",
+    )
+    parser.add_argument("--config", action="config")
+    parser.add_argument("--scheduler", SchedulerParams)
+    parser.add_argument("--pipeline", PipelineParams)
+    parser.add_argument("--basic_network", BasicNetworkOperatorParams)
+    parser.add_argument("--packet", NetConnectorBasicParams)
+    parser.add_argument("--selector", SubchannelSelectParams)
+    parser.add_argument("--rotator", RotatorScheduledParams)
+    parser.add_argument(
+        "--resampler0",
+        jsonargparse.lazy_instance(
+            ResamplePolyParams,
+            up=1,
+            down=8,
+            outrate_cutoff=1.0,
+            # transition_width: 2 * (cutoff - 1 / remaining_dec)
+            #                   2 * (1.0 - 1 / 8) = 1.75
+            outrate_transition_width=1.75,
+            attenuation_db=105,
+        ),
+    )
+    parser.add_argument(
+        "--resampler1",
+        jsonargparse.lazy_instance(
+            ResamplePolyParams,
+            up=5,
+            down=16,
+            outrate_cutoff=1.0,
+            outrate_transition_width=0.2,
+            attenuation_db=99.65,
+        ),
+    )
+    parser.add_argument(
+        "--resampler2",
+        jsonargparse.lazy_instance(
+            ResamplePolyParams,
+            up=1,
+            down=8,
+            outrate_cutoff=1.0,
+            outrate_transition_width=0.2,
+            attenuation_db=99.475,
+        ),
+    )
+    parser.add_argument("--drf_sink", DigitalRFSinkParams)
+
+    parser.link_arguments("packet.batch_size", "basic_network.batch_size")
+    parser.link_arguments("packet.max_packet_size", "basic_network.max_payload_size")
+    parser.link_arguments("packet.num_subchannels", "packet.header_metadata.num_subchannels")
+    return parser
 
 
 class App(holoscan.core.Application):
@@ -132,9 +181,7 @@ class App(holoscan.core.Application):
                 last_op = rotator
 
             if self.kwargs("pipeline")["resampler0"]:
-                resample_kwargs = add_filter_coefs_kwargs(
-                    **add_chunk_kwargs(last_chunk_shape, **self.kwargs("resampler0"))
-                )
+                resample_kwargs = add_chunk_kwargs(last_chunk_shape, **self.kwargs("resampler0"))
                 resampler0 = rf_array.ResamplePoly(self, name="resampler0", **resample_kwargs)
                 self.add_flow(last_op, resampler0)
                 last_op = resampler0
@@ -144,9 +191,7 @@ class App(holoscan.core.Application):
                 )
 
             if self.kwargs("pipeline")["resampler1"]:
-                resample_kwargs = add_filter_coefs_kwargs(
-                    **add_chunk_kwargs(last_chunk_shape, **self.kwargs("resampler1"))
-                )
+                resample_kwargs = add_chunk_kwargs(last_chunk_shape, **self.kwargs("resampler1"))
                 resampler1 = rf_array.ResamplePoly(self, name="resampler1", **resample_kwargs)
                 self.add_flow(last_op, resampler1)
                 last_op = resampler1
@@ -156,9 +201,7 @@ class App(holoscan.core.Application):
                 )
 
             if self.kwargs("pipeline")["resampler2"]:
-                resample_kwargs = add_filter_coefs_kwargs(
-                    **add_chunk_kwargs(last_chunk_shape, **self.kwargs("resampler2"))
-                )
+                resample_kwargs = add_chunk_kwargs(last_chunk_shape, **self.kwargs("resampler2"))
                 resampler2 = rf_array.ResamplePoly(self, name="resampler2", **resample_kwargs)
                 self.add_flow(last_op, resampler2)
                 last_op = resampler2
@@ -184,11 +227,7 @@ class App(holoscan.core.Application):
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        prog="sdr_mep_recorder",
-        description="Process and record RF data for the SpectrumX Mobile Experiment Platform (MEP)",
-    )
-    parser.add_argument("config_file", default="sr16MHz.yaml")
+    parser = build_config_parser()
     args = parser.parse_args()
 
     env_log_level = os.environ.get("HOLOSCAN_LOG_LEVEL", "WARN").upper()
@@ -197,15 +236,12 @@ def main():
         env_log_level = "DEBUG"
     logging.basicConfig(level=env_log_level)
 
-    config_path = pathlib.Path(args.config_file)
-    if not config_path.exists():
-        # configs in same directory as script (e.g. run from build directory)
-        here = pathlib.Path(__file__).parent.absolute()
-        config_path = here / config_path
-    if not config_path.exists():
-        # configs installed relative to script (e.g. run after installation to prefix)
-        here = pathlib.Path(__file__).parent.absolute()
-        config_path = here.parent / "share" / "sdr_mep_recorder" / "configs" / config_path
+    # We have a parsed configuration (using jsonargparse), but the holoscan app wants
+    # to read all of its configuration parameters from a YAML file, so we write out
+    # the configuration to a file in the temporary directory and feed it that
+    config_path = pathlib.Path(tempfile.gettempdir()) / "sdr_mep_recorder_config.yaml"
+    logger.debug(f"Writing temporary config file to {config_path}")
+    parser.save(args, config_path)
 
     app = App()
     app.config(str(config_path))

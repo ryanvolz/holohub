@@ -42,9 +42,9 @@ Parameters
 ----------
 fragment : Fragment
     The fragment that the operator belongs to.
-cycle_duration_secs : int
+cycle_duration_secs : float
     Duration of the cycle of frequencies before it repeats.
-cycle_start_timestamp : int
+cycle_start_timestamp : float
     Cycle start timestamp (seconds since Unix epoch).
 schedule : list of {"start": start_time, "freq": frequency}
     Schedule of frequencies and their activation times in the cycle. The frequencies

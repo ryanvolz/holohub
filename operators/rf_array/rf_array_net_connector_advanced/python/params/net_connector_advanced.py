@@ -1,0 +1,60 @@
+# SPDX-FileCopyrightText: Copyright (c) 2025 Massachusetts Institute of Technology
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+from dataclasses import dataclass
+from typing import Optional
+
+from jsonargparse.typing import NonNegativeInt, PositiveInt
+
+__all__ = ["NetConnectorAdvancedParams"]
+
+
+@dataclass
+class NetConnectorAdvancedParams:
+    """Advanced net connector parameters"""
+
+    buffer_size: PositiveInt = 10
+    """Max number of num_samples batches that can be held at once"""
+    num_samples: PositiveInt = 12800000
+    """Number of samples per output chunk"""
+    num_subchannels: PositiveInt = 1
+    """Number of IQ subchannels per sample time instance"""
+    freq_idx_scaling: float = 1
+    """Multiplier to apply to the frequency index from header metadata to calculate
+    the center frequency: ``center_freq = freq_idx_scaling * freq_idx + freq_idx_offset``
+    """
+    freq_idx_offset: float = 0
+    """Additive offset to apply to the center frequency calculated from header
+    metadata: ``center_freq = freq_idx_scaling * freq_idx + freq_idx_offset``
+    """
+    spoof_header: bool = False
+    """Whether or not to ignore the packet header and spoof its metadata"""
+    packet_skip_bytes: NonNegativeInt = 0
+    """If spoofing packet header, number of bytes to skip at the beginning of each
+    packet before reading data
+    """
+    header_metadata: Optional[dict] = None
+    """Metadata values to use in spoofed header. The ``sample_idx`` cannot be specified
+    since it varies per packet, but you can instead specify the ``start_sample_idx``
+    to give the sample index of the first sample in the first packet
+    """
+    batch_size: PositiveInt = 6250
+    """Batch size in packets for each processing epoch"""
+    max_packet_size: PositiveInt = 8256
+    """Maximum packet size (not including network protocol headers) expected from sender"""
+    gpu_direct: bool = True
+    """Whether GPUDirect is enabled for the advanced network operator"""
+    use_header_data_split: bool = True
+    """Whether header-data split between CPU and GPU is enabled for the advanced network operator"""

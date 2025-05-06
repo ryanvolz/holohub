@@ -14,11 +14,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 ---
-multithreaded: true
-num_delay_ops: 32
-delay: 0.1
-delay_step: 0.01
-
 scheduler:
   worker_thread_number: 8
   stop_on_deadlock: true

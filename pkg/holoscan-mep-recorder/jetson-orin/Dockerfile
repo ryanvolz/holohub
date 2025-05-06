@@ -28,6 +28,7 @@ LABEL org.opencontainers.image.description="Holoscan MEP recorder"
 ARG DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
+    python3-pip \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
@@ -59,6 +60,12 @@ RUN apt-get update \
     && rm -rf ./cuda-compat-${CUDA_VERSION_STRING}_*_arm64.deb ./cuda-compat
 
 RUN ldconfig
+
+#
+# Install Python dependencies not covered by deb packages
+#
+
+RUN python3 -m pip install --no-cache-dir digital-rf jsonargparse[ruyaml,signatures]
 
 #
 # Set up environment variables

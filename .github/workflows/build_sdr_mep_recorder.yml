@@ -52,7 +52,13 @@ jobs:
         with:
           name: holoscan-mep-recorder-deb
           path: ${{ env.IMAGE_CONTEXT }}
-      - name: Log in to the container registry
+      - name: Log in to the NVIDIA container registry
+        uses: docker/login-action@v3
+        with:
+          registry: nvcr.io
+          username: $oauthtoken
+          password: ${{ secrets.NGC_API_KEY }}
+      - name: Log in to the upload container registry
         uses: docker/login-action@v3
         with:
           registry: ${{ env.DOCKER_REGISTRY }}

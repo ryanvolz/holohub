@@ -82,3 +82,9 @@ ENV PYTHONPATH="/opt/nvidia/holoscan/python/lib"
 ENV HOLOSCAN_EXECUTOR_LOG_LEVEL=WARN
 ENV HOLOSCAN_LOG_LEVEL=INFO
 ENV HOLOSCAN_LOG_FORMAT=DEFAULT
+
+COPY entrypoint.bash /entrypoint.bash
+
+RUN --mount=type=tmpfs,target=/ramdisk,size=1G
+WORKDIR /ramdisk
+ENTRYPOINT ["/bin/bash", "/entrypoint.bash"]

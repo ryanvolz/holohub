@@ -74,8 +74,8 @@ class PipelineParams:
 class BasicNetworkOperatorParams:
     """Basic network operator parameters"""
 
-    ip_addr: str = "192.168.4.1"
-    """IP address of interface to bind to"""
+    ip_addr: str = "0.0.0.0"
+    """IP address to bind to"""
     dst_port: NonNegativeInt = 60133
     "UDP or TCP port to listen on"
     l4_proto: str = "udp"

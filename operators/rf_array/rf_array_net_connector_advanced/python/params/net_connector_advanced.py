@@ -13,12 +13,32 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 
 from jsonargparse.typing import NonNegativeInt, PositiveInt
 
 __all__ = ["NetConnectorAdvancedParams"]
+
+
+@dataclass
+class SpoofedHeaderMetadata:
+    start_sample_idx: NonNegativeInt = 0
+    """Sample index for start of data"""
+    sample_rate_numerator: PositiveInt = 64000000
+    """Numerator of sample rate in Hz"""
+    sample_rate_denominator: PositiveInt = 1
+    """Denominator of sample rate in Hz"""
+    freq_idx: NonNegativeInt = 0
+    """Integer index describing the center frequency"""
+    num_subchannels: PositiveInt = 1
+    """Number of subchannels (concatenated to form a 'sample') contained in the data"""
+    pkt_samples: PositiveInt = 2048
+    """Number of samples in the packet"""
+    bits_per_int: PositiveInt = 16
+    """Bit size of of the data integers"""
+    is_complex: NonNegativeInt = 1
+    """Whether or not the samples are real (0) or complex (1)"""
 
 
 @dataclass
@@ -45,7 +65,9 @@ class NetConnectorAdvancedParams:
     """If spoofing packet header, number of bytes to skip at the beginning of each
     packet before reading data
     """
-    header_metadata: Optional[dict] = None
+    header_metadata: Optional[SpoofedHeaderMetadata] = field(
+        default_factory=lambda: SpoofedHeaderMetadata()
+    )
     """Metadata values to use in spoofed header. The ``sample_idx`` cannot be specified
     since it varies per packet, but you can instead specify the ``start_sample_idx``
     to give the sample index of the first sample in the first packet

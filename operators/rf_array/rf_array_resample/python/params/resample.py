@@ -78,6 +78,6 @@ class ResamplePolyParams:
             self.numtaps = numtaps
         if self.kaiser_beta is None:
             self.kaiser_beta = kaiser_beta
-        self.filter_coefs = self.up * ss.firwin(
-            self.numtaps, cutoff, window=("kaiser", self.kaiser_beta)
-        )
+        self.filter_coefs = (
+            self.up * ss.firwin(self.numtaps, cutoff, window=("kaiser", self.kaiser_beta))
+        ).tolist()

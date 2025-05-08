@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 
 from jsonargparse.typing import NonNegativeFloat, PositiveFloat
 
@@ -36,5 +36,7 @@ class RotatorScheduledParams:
     """Duration of the cycle of frequencies (in seconds) before it repeats"""
     cycle_start_timestamp: NonNegativeFloat = 0
     """Cycle start timestamp (seconds since Unix epoch)"""
-    schedule: list[FrequencyScheduleEntry] = field(default_factory=lambda: [FrequencyScheduleEntry()])
+    schedule: list[FrequencyScheduleEntry] = field(
+        default_factory=lambda: [asdict(FrequencyScheduleEntry())]
+    )
     """Schedule (list) of frequencies and their activation times in the cycle"""

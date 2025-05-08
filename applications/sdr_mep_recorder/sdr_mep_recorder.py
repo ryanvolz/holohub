@@ -22,6 +22,7 @@ import pathlib
 import signal
 import sys
 import tempfile
+import typing
 
 import holoscan
 import jsonargparse
@@ -38,6 +39,8 @@ from holohub.rf_array.params import (
 )
 
 logger = logging.getLogger("sdr_mep_recorder.py")
+
+jsonargparse.set_parsing_settings(docstring_parse_attribute_docstrings=True)
 
 
 @dataclasses.dataclass
@@ -86,21 +89,30 @@ class BasicNetworkOperatorParams:
     "Maximum payload size expected from sender"
 
 
+@dataclasses.dataclass
+class AdvancedNetworkOperatorParams:
+    """Advanced network operator parameters"""
+
+    cfg: typing.Optional[dict] = None
+
+
 def build_config_parser():
     parser = jsonargparse.ArgumentParser(
         prog="sdr_mep_recorder",
         description="Process and record RF data for the SpectrumX Mobile Experiment Platform (MEP)",
     )
     parser.add_argument("--config", action="config")
-    parser.add_argument("--scheduler", SchedulerParams)
-    parser.add_argument("--pipeline", PipelineParams)
-    parser.add_argument("--basic_network", BasicNetworkOperatorParams)
-    parser.add_argument("--packet", NetConnectorBasicParams)
-    parser.add_argument("--selector", SubchannelSelectParams)
-    parser.add_argument("--rotator", RotatorScheduledParams)
+    parser.add_argument("--scheduler", type=SchedulerParams)
+    parser.add_argument("--pipeline", type=PipelineParams)
+    parser.add_argument("--basic_network", type=BasicNetworkOperatorParams)
+    parser.add_argument("--advanced_network", type=AdvancedNetworkOperatorParams)
+    parser.add_argument("--packet", type=NetConnectorBasicParams)
+    parser.add_argument("--selector", type=SubchannelSelectParams)
+    parser.add_argument("--rotator", type=RotatorScheduledParams)
     parser.add_argument(
         "--resampler0",
-        jsonargparse.lazy_instance(
+        type=ResamplePolyParams,
+        default=jsonargparse.lazy_instance(
             ResamplePolyParams,
             up=1,
             down=8,
@@ -113,7 +125,8 @@ def build_config_parser():
     )
     parser.add_argument(
         "--resampler1",
-        jsonargparse.lazy_instance(
+        type=ResamplePolyParams,
+        default=jsonargparse.lazy_instance(
             ResamplePolyParams,
             up=5,
             down=16,
@@ -124,7 +137,8 @@ def build_config_parser():
     )
     parser.add_argument(
         "--resampler2",
-        jsonargparse.lazy_instance(
+        type=ResamplePolyParams,
+        default=jsonargparse.lazy_instance(
             ResamplePolyParams,
             up=1,
             down=8,
@@ -133,11 +147,8 @@ def build_config_parser():
             attenuation_db=99.475,
         ),
     )
-    parser.add_argument("--drf_sink", DigitalRFSinkParams)
+    parser.add_argument("--drf_sink", type=DigitalRFSinkParams)
 
-    parser.link_arguments("packet.batch_size", "basic_network.batch_size")
-    parser.link_arguments("packet.max_packet_size", "basic_network.max_payload_size")
-    parser.link_arguments("packet.num_subchannels", "packet.header_metadata.num_subchannels")
     return parser
 
 
@@ -228,7 +239,15 @@ class App(holoscan.core.Application):
 
 def main():
     parser = build_config_parser()
-    args = parser.parse_args()
+    cfg = parser.parse_args()
+    # initialize dataclass arguments and then return it to a nested namespace
+    init = parser.instantiate_classes(cfg)
+    cfg = jsonargparse.dict_to_namespace(
+        {
+            k: dataclasses.asdict(v) if dataclasses.is_dataclass(v) else v
+            for k, v in init.as_dict().items()
+        }
+    )
 
     env_log_level = os.environ.get("HOLOSCAN_LOG_LEVEL", "WARN").upper()
     if env_log_level == "TRACE":
@@ -241,7 +260,7 @@ def main():
     # the configuration to a file in the temporary directory and feed it that
     config_path = pathlib.Path(tempfile.gettempdir()) / "sdr_mep_recorder_config.yaml"
     logger.debug(f"Writing temporary config file to {config_path}")
-    parser.save(args, config_path)
+    parser.save(cfg, config_path, format="yaml", overwrite=True)
 
     app = App()
     app.config(str(config_path))

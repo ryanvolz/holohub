@@ -30,6 +30,6 @@ target_link_libraries(rf_array_python
     PUBLIC rf_array_type_conversion_sc16_fc32
 )
 
-add_custom_target(rf_array_type_conversion_python_params
-    COMMAND ${CMAKE_COMMAND} -E copy_directory params ${HOLOHUB_PYTHON_MODULE_OUT_DIR}/rf_array/params
+add_custom_target(rf_array_type_conversion_python_params ALL
+    COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_SOURCE_DIR}/params ${HOLOHUB_PYTHON_MODULE_OUT_DIR}/rf_array/params
 )

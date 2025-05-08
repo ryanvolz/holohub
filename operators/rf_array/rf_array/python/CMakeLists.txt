@@ -23,13 +23,13 @@ pybind11_add_holohub_module(
     SOURCES rf_array_pybind.cpp
 )
 
-add_custom_target(rf_array_python_params
-    COMMAND ${CMAKE_COMMAND} -E copy_directory params ${HOLOHUB_PYTHON_MODULE_OUT_DIR}/rf_array/params
+add_custom_target(rf_array_python_params ALL
+    COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_SOURCE_DIR}/params ${HOLOHUB_PYTHON_MODULE_OUT_DIR}/rf_array/params
 )
 
 install(
     DIRECTORY "${HOLOHUB_PYTHON_MODULE_OUT_DIR}/rf_array"
-    DESTINATION python/lib
+    DESTINATION python/lib/holohub/
     FILE_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
     DIRECTORY_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
     COMPONENT rf_array-py

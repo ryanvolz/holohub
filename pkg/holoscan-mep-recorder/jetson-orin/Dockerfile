@@ -28,6 +28,7 @@ LABEL org.opencontainers.image.description="Holoscan MEP recorder"
 ARG DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
+    libnuma1 \
     python3-pip \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean

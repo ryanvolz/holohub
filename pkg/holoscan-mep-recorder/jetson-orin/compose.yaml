@@ -10,7 +10,7 @@ services:
     networks:
       - rfsoc_10GbE
     ports:
-      - 60133:60133
+      - 60133:60133/udp
     profiles:
       - recording
     restart: unless-stopped

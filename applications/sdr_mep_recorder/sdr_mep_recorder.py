@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 # SPDX-FileCopyrightText: Copyright (c) 2025 Massachusetts Institute of Technology
 # SPDX-License-Identifier: Apache-2.0
@@ -106,14 +106,15 @@ def build_config_parser():
     parser.add_argument("--pipeline", type=PipelineParams)
     parser.add_argument("--basic_network", type=BasicNetworkOperatorParams)
     parser.add_argument("--advanced_network", type=AdvancedNetworkOperatorParams)
-    parser.add_argument("--packet", type=NetConnectorBasicParams)
+    parser.add_argument(
+        "--packet", type=NetConnectorBasicParams, default=NetConnectorBasicParams(spoof_header=True)
+    )
     parser.add_argument("--selector", type=SubchannelSelectParams)
     parser.add_argument("--rotator", type=RotatorScheduledParams)
     parser.add_argument(
         "--resampler0",
         type=ResamplePolyParams,
-        default=jsonargparse.lazy_instance(
-            ResamplePolyParams,
+        default=ResamplePolyParams(
             up=1,
             down=8,
             outrate_cutoff=1.0,
@@ -126,8 +127,7 @@ def build_config_parser():
     parser.add_argument(
         "--resampler1",
         type=ResamplePolyParams,
-        default=jsonargparse.lazy_instance(
-            ResamplePolyParams,
+        default=ResamplePolyParams(
             up=5,
             down=16,
             outrate_cutoff=1.0,
@@ -138,8 +138,7 @@ def build_config_parser():
     parser.add_argument(
         "--resampler2",
         type=ResamplePolyParams,
-        default=jsonargparse.lazy_instance(
-            ResamplePolyParams,
+        default=ResamplePolyParams(
             up=1,
             down=8,
             outrate_cutoff=1.0,

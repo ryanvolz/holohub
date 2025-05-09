@@ -49,7 +49,7 @@ basic_network:
   max_payload_size: *max_packet_size # Maximum payload size
   dst_port: 60133 # UDP destination port for packets
   l4_proto: udp # Layer 4 protocol
-  ip_addr: 192.168.4.1 # Destination IP address
+  ip_addr: 0.0.0.0 # Destination IP address
 
 advanced_network:
   cfg:

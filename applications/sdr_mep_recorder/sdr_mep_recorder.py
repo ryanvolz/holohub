@@ -240,14 +240,6 @@ class App(holoscan.core.Application):
 def main():
     parser = build_config_parser()
     cfg = parser.parse_args()
-    # initialize dataclass arguments and then return it to a nested namespace
-    init = parser.instantiate_classes(cfg)
-    cfg = jsonargparse.dict_to_namespace(
-        {
-            k: dataclasses.asdict(v) if dataclasses.is_dataclass(v) else v
-            for k, v in init.as_dict().items()
-        }
-    )
 
     env_log_level = os.environ.get("HOLOSCAN_LOG_LEVEL", "WARN").upper()
     if env_log_level == "TRACE":

@@ -46,12 +46,34 @@ chunk_size : int
     Number of samples to operate on in one chunk.
 num_subchannels : int
     Number of IQ subchannels per sample time instance.
-filter_coefs : array
-    Filter coefficients provided to MatX's resample_poly
 up : int
-    Upsampling factor to pass to MatX's resample_poly
+    Upsampling factor
 down : int
-    Downsampling factor to pass to MatX's resample_poly
+    Downsampling factor
+outrate_cutoff : float
+    Normalized low-pass filter cutoff frequency (half-amplitude point,
+    where the attenuation will be -6 dB) where a value of 1.0 indicates
+    half the *output* sampling rate. The value in Hertz is therefore
+    ``(outrate_cutoff * out_sample_rate / 2.0)``.
+outrate_transition_width : float
+    Normalized width of the transition region from pass band to stop band,
+    where a value of 1.0 indicates half the *output* sampling rate.
+    The value in Hertz is therefore
+    ``(outrate_transition_width * out_sample_rate / 2.0)``.
+attenuation_db : float
+    Minimum attenuation of the low-pass filter stop band in dB.
+numtaps: int, optional
+    The length of the filter (number of taps), overriding the value
+    that would be used based on `outrate_transition_width` and
+    `attenuation_db`.
+kaiser_beta: float, optional
+    The beta parameter for the Kaiser window (pi * alpha, controlling
+    main lobe width versus side lobe level), overriding the value that
+    would be used based on `outrate_transition_width` and
+    `attenuation_db`.
+filter_coefs : array, optional
+    Filter coefficients. If provided, these will be used instead
+    of ones that would be designed based on the above parameters.
 )doc")
 }  // namespace Resample
 

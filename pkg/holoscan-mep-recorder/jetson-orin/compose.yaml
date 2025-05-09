@@ -15,6 +15,8 @@ services:
       - recording
     restart: unless-stopped
     runtime: nvidia
+    tmpfs:
+      - /ramdisk:nodev,nosuid,noexec,size=1G
     volumes:
       - /data/ringbuffer:/data/ringbuffer
 

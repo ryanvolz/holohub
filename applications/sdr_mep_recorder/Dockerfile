@@ -22,6 +22,8 @@ FROM nvcr.io/nvidia/base/ubuntu:22.04_20240212
 
 LABEL org.opencontainers.image.description="Holoscan MEP recorder"
 
+WORKDIR /app
+
 #
 # Install any utils needed for execution
 #
@@ -42,13 +44,13 @@ ADD --chmod=664 https://repo.download.nvidia.com/jetson/nvidia-repo-pin-600 /etc
 RUN echo "deb https://repo.download.nvidia.com/jetson/common ${JETPACK_RELEASE} main" >> /etc/apt/sources.list.d/nvidia-l4t-apt-source.list
 
 #
-# Install holoscan-mep-recorder and its dependencies (e.g. holoscan)
+# Install holoscan-rf-array and its dependencies (e.g. holoscan)
 # Install cuda-compat-*-*
 #
-ARG MEP_RECORDER_PACKAGE=holoscan-mep-recorder_*.deb
+ARG RF_ARRAY_PACKAGE=holoscan-rf-array_*.deb
 RUN --mount=type=bind,target=/tmp/build-context \
     apt-get update \
-    && dpkg --unpack /tmp/build-context/${MEP_RECORDER_PACKAGE} \
+    && dpkg --unpack /tmp/build-context/${RF_ARRAY_PACKAGE} \
     && apt-get install -f -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
@@ -85,6 +87,8 @@ ENV HOLOSCAN_LOG_LEVEL=INFO
 ENV HOLOSCAN_LOG_FORMAT=DEFAULT
 
 COPY --chmod=775 entrypoint.bash /entrypoint.bash
+COPY --chmod=666 configs /app/configs
+COPY --chmod=777 sdr_mep_recorder.py /app/sdr_mep_recorder.py
 
 WORKDIR /ramdisk
 ENTRYPOINT ["/bin/bash", "/entrypoint.bash"]

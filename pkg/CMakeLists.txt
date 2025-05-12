@@ -15,7 +15,10 @@
 
 include(holohub_configure_deb)
 
-add_holohub_package(holoscan-mep-recorder
+add_holohub_package(holoscan-networking
+                    APPLICATIONS adv_networking_bench basic_networking_ping
+                    OPERATORS advanced_network basic_network)
+add_holohub_package(holoscan-rf-array
                     APPLICATIONS sdr_mep_recorder
                     OPERATORS basic_network
                               rf_array_digital_metadata
@@ -25,6 +28,3 @@ add_holohub_package(holoscan-mep-recorder
                               rf_array_rotator
                               rf_array_subchannel_select
                               rf_array_type_conversion)
-add_holohub_package(holoscan-networking
-                    APPLICATIONS adv_networking_bench basic_networking_ping
-                    OPERATORS advanced_network basic_network)

@@ -16,10 +16,10 @@
 set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
 
 holohub_configure_deb(
-  NAME "holoscan-mep-recorder"
-  DESCRIPTION "SpectrumX MEP recorder"
+  NAME "holoscan-rf-array"
+  DESCRIPTION "Holoscan RF Array operators"
   VERSION "0.1.0"
-  VENDOR "SpectrumX"
+  VENDOR "MIT Haystack Observatory"
   CONTACT "Ryan Volz <rvolz@mit.edu>"
   COMPONENTS
     basic_network-cpp

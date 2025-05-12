@@ -6,15 +6,15 @@ env:
   BUILD_CUDA_KEYRING: https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/arm64/cuda-keyring_1.1-1_all.deb
   BUILD_HOLOSCAN_VERSION: 2.5.0.1-1
   DOCKER_REGISTRY: ghcr.io
-  IMAGE_CONTEXT: pkg/holoscan-mep-recorder/jetson-orin
+  IMAGE_CONTEXT: applications/sdr_mep_recorder
   IMAGE_NAME: ${{ github.repository }}/mep-recorder
   IMAGE_JETPACK_RELEASE: r36.3
   IMAGE_CUDA_VERSION_STRING: 12-2
-  IMAGE_MEP_RECORDER_PACKAGE: holoscan-mep-recorder_*.deb
+  IMAGE_RF_ARRAY_PACKAGE: holoscan-rf-array_*.deb
 
 jobs:
-  build_holoscan_mep_recorder:
-    name: "Build holoscan-mep-recorder"
+  build_holoscan_rf_array:
+    name: "Build holoscan-rf-array"
     runs-on: ubuntu-22.04-arm
     steps:
       - name: Checkout
@@ -29,15 +29,15 @@ jobs:
           sudo apt-get install -y cuda-toolkit holoscan=${{ env.BUILD_HOLOSCAN_VERSION }} libhdf5-dev
       - name: Run build
         run: |
-          ./run build holoscan-mep-recorder --buildpath build --configure-args "-DCMAKE_CUDA_ARCHITECTURES=87 -DCMAKE_VERBOSE_MAKEFILE=OFF -DHOLOHUB_DOWNLOAD_DATASETS=OFF" --type release
+          ./run build holoscan-rf-array --buildpath build --configure-args "-DCMAKE_CUDA_ARCHITECTURES=87 -DCMAKE_VERBOSE_MAKEFILE=OFF -DHOLOHUB_DOWNLOAD_DATASETS=OFF" --type release
       - name: Upload DEB package artifact
         uses: actions/upload-artifact@v4
         with:
-          name: holoscan-mep-recorder-deb
-          path: holoscan-mep-recorder_*.deb
+          name: holoscan-rf-array-deb
+          path: holoscan-rf-array_*.deb
   build_docker_image:
-    name: "Build Jetson Orin docker image"
-    needs: build_holoscan_mep_recorder
+    name: "Build sdr_mep_recorder docker image for Jetson Orin"
+    needs: build_holoscan_rf_array
     runs-on: ubuntu-22.04-arm
     permissions:
       contents: read
@@ -47,10 +47,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Download holoscan-mep-recorder DEB package artifact
+      - name: Download holoscan-rf-array DEB package artifact
         uses: actions/download-artifact@v4
         with:
-          name: holoscan-mep-recorder-deb
+          name: holoscan-rf-array-deb
           path: ${{ env.IMAGE_CONTEXT }}
       - name: Log in to the NVIDIA container registry
         uses: docker/login-action@v3
@@ -82,7 +82,7 @@ jobs:
           build-args:
             RELEASE=${{ env.IMAGE_JETPACK_RELEASE }}
             CUDA_VERSION_STRING=${{ env.IMAGE_CUDA_VERSION_STRING }}
-            MEP_RECORDER_PACKAGE=${{ env.IMAGE_MEP_RECORDER_PACKAGE }}
+            RF_ARRAY_PACKAGE=${{ env.IMAGE_RF_ARRAY_PACKAGE }}
       - name: Generate artifact attestation
         uses: actions/attest-build-provenance@v2
         with:

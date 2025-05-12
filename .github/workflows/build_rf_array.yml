@@ -37,7 +37,7 @@ jobs:
           name: holoscan-rf-array-deb
           path: holoscan-rf-array_*.deb
   build_docker_image:
-    name: "Build sdr_mep_recorder docker image for Jetson Orin"
+    name: "Build rf-array docker image for Jetson Orin"
     needs: build_holoscan_rf_array
     runs-on: ubuntu-22.04-arm
     permissions:

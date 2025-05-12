@@ -51,7 +51,7 @@ class SchedulerParams:
     """Number of worker threads"""
     stop_on_deadlock: bool = True
     """Whether the application will terminate if a deadlock occurs"""
-    stop_on_deadlock_timeout: float = 500
+    stop_on_deadlock_timeout: int = 500
     """Time (in ms) to wait before determining that a deadlock has occurred"""
 
 
@@ -100,6 +100,7 @@ def build_config_parser():
     parser = jsonargparse.ArgumentParser(
         prog="sdr_mep_recorder",
         description="Process and record RF data for the SpectrumX Mobile Experiment Platform (MEP)",
+        default_env=True,
     )
     parser.add_argument("--config", action="config")
     parser.add_argument("--scheduler", type=SchedulerParams)
@@ -253,7 +254,7 @@ def main():
     logger.debug(f"Writing temporary config file to {config_path}")
     parser.save(cfg, config_path, format="yaml", overwrite=True)
 
-    app = App()
+    app = App([sys.executable, sys.argv[0]])
     app.config(str(config_path))
 
     scheduler = holoscan.schedulers.EventBasedScheduler(

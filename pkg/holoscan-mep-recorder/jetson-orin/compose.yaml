@@ -3,6 +3,7 @@ services:
   mep_recorder:
     image: ghcr.io/ryanvolz/holohub/mep-recorder:rf_array
     container_name: mep_recorder
+    env_file: .env
     environment:
       - HOLOSCAN_EXECUTOR_LOG_LEVEL=WARN
       - HOLOSCAN_LOG_LEVEL=INFO
@@ -16,7 +17,8 @@ services:
     restart: unless-stopped
     runtime: nvidia
     tmpfs:
-      - /ramdisk:nodev,nosuid,noexec,size=1G
+      - /ramdisk:mode=777,uid=${UID},gid=${GID},nodev,nosuid,noexec,size=1G
+    user: ${UID}:${GID}
     volumes:
       - /data/ringbuffer:/data/ringbuffer
 

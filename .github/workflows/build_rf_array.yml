@@ -1,4 +1,4 @@
-name: Build Holoscan MEP recorder
+name: Build Holoscan RF array package and Docker image
 
 on: workflow_dispatch
 
@@ -6,8 +6,9 @@ env:
   BUILD_CUDA_KEYRING: https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/arm64/cuda-keyring_1.1-1_all.deb
   BUILD_HOLOSCAN_VERSION: 2.5.0.1-1
   DOCKER_REGISTRY: ghcr.io
-  IMAGE_CONTEXT: applications/sdr_mep_recorder
-  IMAGE_NAME: ${{ github.repository }}/mep-recorder
+  IMAGE_CONTEXT: pkg/holoscan-rf-array
+  IMAGE_DOCKERFILE: pkg/holoscan-rf-array/Dockerfile.jetsonorin
+  IMAGE_NAME: ${{ github.repository }}/rf-array
   IMAGE_JETPACK_RELEASE: r36.3
   IMAGE_CUDA_VERSION_STRING: 12-2
   IMAGE_RF_ARRAY_PACKAGE: holoscan-rf-array_*.deb
@@ -76,11 +77,11 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: ${{ env.IMAGE_CONTEXT }}
+          file: ${{ env.IMAGE_DOCKERFILE }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          build-args:
-            RELEASE=${{ env.IMAGE_JETPACK_RELEASE }}
+          build-args: RELEASE=${{ env.IMAGE_JETPACK_RELEASE }}
             CUDA_VERSION_STRING=${{ env.IMAGE_CUDA_VERSION_STRING }}
             RF_ARRAY_PACKAGE=${{ env.IMAGE_RF_ARRAY_PACKAGE }}
       - name: Generate artifact attestation

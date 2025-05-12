@@ -20,9 +20,7 @@
 
 FROM nvcr.io/nvidia/base/ubuntu:22.04_20240212
 
-LABEL org.opencontainers.image.description="Holoscan MEP recorder"
-
-WORKDIR /app
+LABEL org.opencontainers.image.description="Holoscan RF array operators"
 
 #
 # Install any utils needed for execution
@@ -31,7 +29,6 @@ ARG DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     libnuma1 \
-    python3-pip \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
@@ -65,12 +62,6 @@ RUN apt-get update \
 RUN ldconfig
 
 #
-# Install Python dependencies not covered by deb packages
-#
-
-RUN python3 -m pip install --no-cache-dir digital-rf jsonargparse[ruyaml,signatures]
-
-#
 # Set up environment variables
 #
 ENV CUDA_HOME="/usr/local/cuda"
@@ -81,14 +72,3 @@ ENV NVIDIA_VISIBLE_DEVICES all
 ENV NVIDIA_DRIVER_CAPABILITIES all
 
 ENV PYTHONPATH="/opt/nvidia/holoscan/python/lib"
-
-ENV HOLOSCAN_EXECUTOR_LOG_LEVEL=WARN
-ENV HOLOSCAN_LOG_LEVEL=INFO
-ENV HOLOSCAN_LOG_FORMAT=DEFAULT
-
-COPY --chmod=775 entrypoint.bash /entrypoint.bash
-COPY --chmod=666 configs /app/configs
-COPY --chmod=777 sdr_mep_recorder.py /app/sdr_mep_recorder.py
-
-WORKDIR /ramdisk
-ENTRYPOINT ["/bin/bash", "/entrypoint.bash"]

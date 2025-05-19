@@ -178,7 +178,10 @@ void RotatorScheduled::compute(InputContext& op_input, OutputContext& op_output,
 
     (out_data_flipped = in_data_flipped * rotator).run(stream);
 
-    auto params = std::make_shared<RFArray<complex_t>>(out_data, in->metadata, stream);
+    auto out_metadata = in->metadata;
+    out_metadata.center_freq = step_freq;
+
+    auto params = std::make_shared<RFArray<complex_t>>(out_data, out_metadata, stream);
     op_output.emit(params, "rf_out");
   } else {
     op_output.emit(in, "rf_out");

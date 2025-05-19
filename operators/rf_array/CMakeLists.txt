@@ -13,6 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+add_holohub_operator(rf_array_digital_metadata)
 add_holohub_operator(rf_array_digital_rf)
 add_holohub_operator(rf_array_net_connector_advanced)
 add_holohub_operator(rf_array_net_connector_basic)

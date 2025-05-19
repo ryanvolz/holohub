@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 # Files to include in our module
-list(APPEND rf_array_digital_metadata_files
+list(APPEND rf_array_digital_metadata_python_files
     digital_metadata.py
 )
 
@@ -19,8 +19,12 @@ list(TRANSFORM rf_array_digital_metadata_python_files
 )
 
 # Target to copy
-add_custom_target(rf_array_digital_metadata
+add_custom_target(rf_array_digital_metadata ALL
     COMMAND ${CMAKE_COMMAND} -E copy ${rf_array_digital_metadata_python_src_files} ${rf_array_python_out_dir}
     DEPENDS ${rf_array_digital_metadata_python_src_files}
     BYPRODUCTS ${rf_array_digital_metadata_python_out_files}
+)
+
+add_custom_target(rf_array_digital_metadata_python_params ALL
+    COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_SOURCE_DIR}/params ${HOLOHUB_PYTHON_MODULE_OUT_DIR}/rf_array/params
 )

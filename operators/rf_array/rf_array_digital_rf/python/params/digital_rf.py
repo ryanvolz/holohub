@@ -13,10 +13,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 from dataclasses import dataclass
 from typing import Optional
 
-from jsonargparse.typing import NonNegativeInt, Path_dc, PositiveInt
+from jsonargparse.typing import NonNegativeInt, PositiveInt
 
 __all__ = ["DigitalRFSinkParams"]
 
@@ -25,7 +26,7 @@ __all__ = ["DigitalRFSinkParams"]
 class DigitalRFSinkParams:
     """Digital RF Sink parameters"""
 
-    channel_dir: Path_dc
+    channel_dir: os.PathLike
     """Directory for writing the Digital RF channel"""
     chunk_size: Optional[PositiveInt] = None
     """Number of samples to operate on in one chunk"""

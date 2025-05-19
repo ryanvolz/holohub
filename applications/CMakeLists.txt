@@ -85,6 +85,7 @@ add_holohub_application(realsense_visualizer DEPENDS OPERATORS realsense_camera)
 
 add_holohub_application(sdr_mep_recorder DEPENDS
                         OPERATORS basic_network
+                                  rf_array_digital_metadata
                                   rf_array_digital_rf
                                   rf_array_net_connector_basic
                                   rf_array_resample

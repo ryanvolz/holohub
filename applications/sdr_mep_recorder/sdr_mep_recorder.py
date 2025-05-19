@@ -29,7 +29,9 @@ import jsonargparse
 from jsonargparse.typing import NonNegativeInt, PositiveInt
 
 from holohub import basic_network, rf_array
+from holohub.rf_array.digital_metadata import DigitalMetadataSink
 from holohub.rf_array.params import (
+    DigitalMetadataSinkParams,
     DigitalRFSinkParams,
     NetConnectorBasicParams,
     ResamplePolyParams,
@@ -148,6 +150,7 @@ def build_config_parser():
         ),
     )
     parser.add_argument("--drf_sink", type=DigitalRFSinkParams)
+    parser.add_argument("--dmd_sink", type=DigitalMetadataSinkParams)
 
     return parser
 
@@ -236,16 +239,30 @@ class App(holoscan.core.Application):
             )
             self.add_flow(last_op, drf_sink)
 
+        dmd_sink = DigitalMetadataSink(
+            self,
+            name="dmd_sink",
+            **self.kwargs("dmd_sink"),
+        )
+        self.add_flow(last_op, dmd_sink)
+
 
 def main():
     parser = build_config_parser()
     cfg = parser.parse_args()
 
     env_log_level = os.environ.get("HOLOSCAN_LOG_LEVEL", "WARN").upper()
-    if env_log_level == "TRACE":
-        # TRACE exists for holoscan, but not in Python, so substitute with DEBUG
-        env_log_level = "DEBUG"
-    logging.basicConfig(level=env_log_level)
+    log_level_map = {
+        "OFF": "NOTSET",
+        "CRITICAL": "CRITICAL",
+        "ERROR": "ERROR",
+        "WARN": "WARNING",
+        "INFO": "INFO",
+        "DEBUG": "DEBUG",
+        "TRACE": "DEBUG",
+    }
+    log_level = log_level_map[env_log_level]
+    logging.basicConfig(level=log_level, force=True)
 
     # We have a parsed configuration (using jsonargparse), but the holoscan app wants
     # to read all of its configuration parameters from a YAML file, so we write out

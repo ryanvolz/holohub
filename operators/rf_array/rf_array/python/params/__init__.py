@@ -16,6 +16,10 @@
 from .rf_array import *
 
 try:
+    from .digital_metadata import *
+except ImportError:
+    pass
+try:
     from .digital_rf import *
 except ImportError:
     pass

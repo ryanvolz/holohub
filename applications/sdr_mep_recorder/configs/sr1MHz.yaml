@@ -780,4 +780,14 @@ drf_sink:
   chunk_size: &drf_chunk_size 200000
   num_subchannels: *num_subchannels
   channel_dir: sr1MHz
-  uuid: mep_pipeline_sr1MHz
+  uuid: &uuid mep_pipeline_sr1MHz
+
+dmd_sink:
+  metadata_dir: sr1MHz/metadata
+  uuid: *uuid
+  metadata:
+    receiver:
+      description: "MEP recorder"
+    processing:
+      decimation: 64
+      interpolation: 1

@@ -16,6 +16,7 @@
  */
 #pragma once
 
+#include <chrono>
 #include <map>
 #include <string>
 
@@ -71,6 +72,31 @@ inline void spoofed_packet_header_from_map(RFPacketHeader* meta,
   meta->pkt_samples = static_cast<uint32_t>(header_vals.at("pkt_samples"));
   meta->bits_per_int = static_cast<uint16_t>(header_vals.at("bits_per_int"));
   meta->is_complex = static_cast<unsigned>(header_vals.at("is_complex"));
+
+  if (meta->sample_idx == 0) {
+    // substitute sample index corresponding to the current time
+    auto now = std::chrono::system_clock::now();
+    auto seconds_since_epoch =
+        std::chrono::duration_cast<std::chrono::seconds>(now.time_since_epoch()).count();
+    // this time to sample index conversion is copied from digital_rf, where it not yet exposed
+    // as a function (but should be in version 2.7)
+    auto tmp_div = seconds_since_epoch / meta->sample_rate_denominator;
+    auto tmp_mod = seconds_since_epoch % meta->sample_rate_denominator;
+    tmp_div *= meta->sample_rate_numerator;
+    tmp_mod *= meta->sample_rate_numerator;
+    tmp_div += tmp_mod / meta->sample_rate_denominator;
+    tmp_mod = tmp_mod % meta->sample_rate_denominator;
+    auto remainder = tmp_mod * 1000000000;
+    auto quotient = remainder / meta->sample_rate_denominator;
+    remainder = remainder % meta->sample_rate_denominator;
+    tmp_div += quotient / 1000000000;
+    quotient = quotient % 1000000000;
+    remainder += quotient * meta->sample_rate_denominator;
+    quotient = tmp_div;
+    remainder = remainder / 1000000000 + (remainder % 1000000000 != 0);
+    quotient += (remainder != 0);
+    meta->sample_idx = quotient;
+  }
 }
 
 // Tracks the status of filling an RF array

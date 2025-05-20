@@ -14,7 +14,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#include <chrono>
 #include <cmath>
 #include <filesystem>
 
@@ -148,37 +147,15 @@ void DigitalRFSink<sampleType>::compute(InputContext& op_input, OutputContext& o
     start_idx = in->metadata.sample_idx;
     sample_rate_numerator = in->metadata.sample_rate_numerator;
     sample_rate_denominator = in->metadata.sample_rate_denominator;
-    auto drf_start_idx = start_idx;
-    if (drf_start_idx == 0) {
-      auto now = std::chrono::system_clock::now();
-      auto seconds_since_epoch =
-          std::chrono::duration_cast<std::chrono::seconds>(now.time_since_epoch()).count();
-      auto tmp_div = seconds_since_epoch / sample_rate_denominator;
-      auto tmp_mod = seconds_since_epoch % sample_rate_denominator;
-      tmp_div *= sample_rate_numerator;
-      tmp_mod *= sample_rate_numerator;
-      tmp_div += tmp_mod / sample_rate_denominator;
-      tmp_mod = tmp_mod % sample_rate_denominator;
-      auto remainder = tmp_mod * 1000000000;
-      auto quotient = remainder / sample_rate_denominator;
-      remainder = remainder % sample_rate_denominator;
-      tmp_div += quotient / 1000000000;
-      quotient = quotient % 1000000000;
-      remainder += quotient * sample_rate_denominator;
-      quotient = tmp_div;
-      remainder = remainder / 1000000000 + (remainder % 1000000000 != 0);
-      quotient += (remainder != 0);
-      drf_start_idx = quotient;
-    }
     HOLOSCAN_LOG_INFO("Initializing Digital RF writer with start_idx {}, sample_rate {}/{}",
-                      drf_start_idx,
+                      start_idx,
                       sample_rate_numerator,
                       sample_rate_denominator);
     drf_writer = digital_rf_create_write_hdf5(channel_dir_path.string().data(),
                                               hdf5_dtype,
                                               subdir_cadence_secs.get(),
                                               file_cadence_millisecs.get(),
-                                              drf_start_idx,
+                                              start_idx,
                                               sample_rate_numerator,
                                               sample_rate_denominator,
                                               uuid.get().data(),

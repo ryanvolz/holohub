@@ -39,7 +39,7 @@ class DigitalMetadataSink(holoscan.core.Operator):
         *args,
         subdir_cadence_secs=3600,
         file_cadence_secs=1,
-        uuid="holoscan",
+        uuid=None,
         filename_prefix="metadata",
         metadata=None,
         **kwargs,
@@ -71,7 +71,10 @@ class DigitalMetadataSink(holoscan.core.Operator):
         self.metadata_dir = pathlib.Path(metadata_dir).resolve()
         self.subdir_cadence_secs = subdir_cadence_secs
         self.file_cadence_secs = file_cadence_secs
-        self.uuid = uuid
+        if uuid is None:
+            self.uuid = str(uuid.uuid4().hex)
+        else:
+            self.uuid = uuid
         self.filename_prefix = filename_prefix
         if metadata is None:
             self.static_metadata = {}

@@ -17,9 +17,11 @@
 #include <cstdint>
 #include <filesystem>
 #include <memory>
+#include <optional>
 #include <string>
 
 #include <pybind11/pybind11.h>
+#include <pybind11/stl.h>
 #include <pybind11/stl/filesystem.h>
 
 #include <holoscan/core/fragment.hpp>
@@ -48,7 +50,7 @@ class PyDigitalRFSink : public DigitalRFSink<sampleType> {
   PyDigitalRFSink(Fragment* fragment, const py::args& args, uint32_t chunk_size,
                   uint16_t num_subchannels, const std::filesystem::path& channel_dir,
                   uint64_t subdir_cadence_secs = 3600, uint64_t file_cadence_millisecs = 1000,
-                  const std::string& uuid = "holoscan", int compression_level = 0,
+                  std::optional<const std::string> uuid = std::nullopt, int compression_level = 0,
                   bool checksum = false, bool is_continuous = true, bool marching_dots = false,
                   const std::string& name = "digital_rf_sink")
       : DigitalRFSink<sampleType>(ArgList{
@@ -57,12 +59,18 @@ class PyDigitalRFSink : public DigitalRFSink<sampleType> {
             Arg{"channel_dir", channel_dir.string()},
             Arg{"subdir_cadence_secs", subdir_cadence_secs},
             Arg{"file_cadence_millisecs", file_cadence_millisecs},
-            Arg{"uuid", uuid},
             Arg{"compression_level", compression_level},
             Arg{"checksum", checksum},
             Arg{"is_continuous", is_continuous},
             Arg{"marching_dots", marching_dots},
         }) {
+    if (uuid.has_value()) {
+      this->add_arg(Arg{"uuid", uuid.value()});
+    } else {
+      py::object uuid = py::module_::import("uuid");
+      const std::string uuid_str = uuid.attr("uuid4")().attr("hex").cast<const std::string>();
+      this->add_arg(Arg{"uuid", uuid_str});
+    }
     add_positional_condition_and_resource_args(this, args);
     this->name_ = name;
     this->fragment_ = fragment;
@@ -84,7 +92,7 @@ void bind_rf_array_digital_rf(py::module& m) {
                     const std::filesystem::path&,
                     uint64_t,
                     uint64_t,
-                    const std::string&,
+                    std::optional<const std::string>,
                     int,
                     bool,
                     bool,
@@ -96,7 +104,7 @@ void bind_rf_array_digital_rf(py::module& m) {
            "channel_dir"_a,
            "subdir_cadence_secs"_a = 3600,
            "file_cadence_millisecs"_a = 1000,
-           "uuid"_a = "holoscan",
+           "uuid"_a = py::none(),
            "compression_level"_a = 0,
            "checksum"_a = false,
            "is_continuous"_a = true,
@@ -116,7 +124,7 @@ void bind_rf_array_digital_rf(py::module& m) {
                     const std::filesystem::path&,
                     uint64_t,
                     uint64_t,
-                    const std::string&,
+                    std::optional<const std::string>,
                     int,
                     bool,
                     bool,
@@ -128,7 +136,7 @@ void bind_rf_array_digital_rf(py::module& m) {
            "channel_dir"_a,
            "subdir_cadence_secs"_a = 3600,
            "file_cadence_millisecs"_a = 1000,
-           "uuid"_a = "holoscan",
+           "uuid"_a = py::none(),
            "compression_level"_a = 0,
            "checksum"_a = false,
            "is_continuous"_a = true,

@@ -31,7 +31,6 @@ from jsonargparse.typing import NonNegativeInt, PositiveInt
 from holohub import basic_network, rf_array
 from holohub.rf_array.digital_metadata import DigitalMetadataSink
 from holohub.rf_array.params import (
-    DigitalMetadataSinkParams,
     DigitalRFSinkParams,
     NetConnectorBasicParams,
     ResamplePolyParams,
@@ -150,7 +149,7 @@ def build_config_parser():
         ),
     )
     parser.add_argument("--drf_sink", type=DigitalRFSinkParams)
-    parser.add_argument("--dmd_sink", type=DigitalMetadataSinkParams)
+    parser.add_argument("--metadata", type=typing.Optional[dict[str, typing.Any]], default=None)
 
     return parser
 
@@ -242,7 +241,12 @@ class App(holoscan.core.Application):
         dmd_sink = DigitalMetadataSink(
             self,
             name="dmd_sink",
-            **self.kwargs("dmd_sink"),
+            metadata_dir=f"{self.kwargs('drf_sink')['channel_dir']}/metadata",
+            subdir_cadence_secs=self.kwargs("drf_sink")["subdir_cadence_secs"],
+            file_cadence_secs=self.kwargs("drf_sink")["file_cadence_millisecs"] // 1000,
+            uuid=self.kwargs("drf_sink")["uuid"],
+            filename_prefix="metadata",
+            metadata=self.kwargs("metadata"),
         )
         self.add_flow(last_op, dmd_sink)
 

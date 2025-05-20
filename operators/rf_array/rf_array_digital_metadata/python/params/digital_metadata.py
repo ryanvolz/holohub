@@ -14,7 +14,8 @@
 # limitations under the License.
 
 import os
-from dataclasses import dataclass
+import uuid
+from dataclasses import dataclass, field
 from typing import Any, Optional
 
 from jsonargparse.typing import PositiveInt
@@ -32,7 +33,7 @@ class DigitalMetadataSinkParams:
     """Subdirectory cadence in number of seconds"""
     file_cadence_secs: PositiveInt = 1
     """File cadence in seconds"""
-    uuid: str = "holoscan"
+    uuid: str = field(default_factory=lambda: str(uuid.uuid4().hex))
     """Unique identifier string for this channel"""
     filename_prefix: str = "metadata"
     """Name to be used at beginning of metadata files, i.e. {filename_prefix}@{timestamp}.h5"""

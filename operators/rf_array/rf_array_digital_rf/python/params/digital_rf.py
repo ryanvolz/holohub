@@ -14,7 +14,8 @@
 # limitations under the License.
 
 import os
-from dataclasses import dataclass
+import uuid
+from dataclasses import dataclass, field
 from typing import Optional
 
 from jsonargparse.typing import NonNegativeInt, PositiveInt
@@ -36,7 +37,7 @@ class DigitalRFSinkParams:
     """Subdirectory cadence in number of seconds"""
     file_cadence_millisecs: PositiveInt = 1000
     """File cadence in milliseconds"""
-    uuid: str = "holoscan"
+    uuid: str = field(default_factory=lambda: str(uuid.uuid4().hex))
     """Unique identifier string for this channel"""
     compression_level: NonNegativeInt = 0
     """HDF5 compression level (0 for none, 1-9 for gzip level)"""

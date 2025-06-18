@@ -1,6 +1,15 @@
 name: Build Holoscan RF array package and Docker image
 
-on: workflow_dispatch
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - 'rf_array'
+    tags:
+      - 'rf-array-*'
+  pull_request:
+    branches:
+      - 'rf_array'
 
 env:
   BUILD_CUDA_KEYRING: https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/arm64/cuda-keyring_1.1-1_all.deb
@@ -72,6 +81,14 @@ jobs:
           images: ${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}
           labels: |
             org.opencontainers.image.description=Holoscan MEP recorder
+          tags: |
+            type=schedule
+            type=ref,event=branch
+            type=ref,event=tag
+            type=ref,event=pr
+            type=match,pattern=rf-array-(.*),group=1
+            type=match,pattern=rf-array-(v\d+.\d+).*,group=1
+            type=match,pattern=rf-array-(v\d+).*,group=1
       - name: Build and push Docker image
         id: push
         uses: docker/build-push-action@v6

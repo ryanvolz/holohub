@@ -15,7 +15,7 @@ include(FetchContent)
 FetchContent_Declare(
   MatX
   GIT_REPOSITORY https://github.com/ryanvolz/MatX.git
-  GIT_TAG mimo_radar
+  GIT_TAG mep
 )
 FetchContent_MakeAvailable(MatX)
 

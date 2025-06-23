@@ -21,6 +21,9 @@
 #include "./rf_array_types_pydoc.hpp"
 #include "rf_array/rf_array.h"
 
+using std::string_literals::operator""s;
+using pybind11::literals::operator""_a;
+
 namespace py = pybind11;
 
 namespace holoscan::ops {
@@ -72,12 +75,57 @@ PYBIND11_MODULE(_rf_array, m) {
       .def_readonly("center_freq", &RFMetadata::center_freq);
 
   py::class_<RFArray<complex_int_type>>(m, "RFArray_sc16", doc::RFArrayTypes::doc_RFArray_python)
-      .def_readonly("data", &RFArray<complex_int_type>::data)
-      .def_readonly("metadata", &RFArray<complex_int_type>::metadata);
+      .def(py::init([](holoscan::Tensor data,
+                       RFMetadata metadata,
+                       std::optional<int64_t> stream = std::nullopt) {
+             matx::tensor_t<complex_int_type, 2> data_matx;
+             matx::make_tensor(data_matx, *data.to_dlpack());
+             cudaStream_t stream_ptr;
+             if (stream.has_value()) {
+               // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast,performance-no-int-to-ptr)
+               stream_ptr = reinterpret_cast<cudaStream_t>(stream.value());
+             } else {
+               cudaStreamCreateWithFlags(&stream_ptr, cudaStreamNonBlocking);
+             }
+             return RFArray(data_matx, metadata, stream_ptr);
+           }),
+           "data"_a,
+           "metadata"_a,
+           "stream"_a = py::none(),
+           doc::RFArrayTypes::doc_RFArray_python)
+      .def_property_readonly(
+          "data",
+          [](const RFArray<complex_int_type>& a) { return holoscan::Tensor(a.data.ToDlPack()); })
+      .def_readonly("metadata", &RFArray<complex_int_type>::metadata)
+      .def_property_readonly("stream", [](const RFArray<complex_int_type>& a) {
+        return reinterpret_cast<int64_t>(a.stream);
+      });
 
   py::class_<RFArray<complex_t>>(m, "RFArray_fc32", doc::RFArrayTypes::doc_RFArray_python)
-      .def_readonly("data", &RFArray<complex_t>::data)
-      .def_readonly("metadata", &RFArray<complex_t>::metadata);
+      .def(py::init([](holoscan::Tensor data,
+                       RFMetadata metadata,
+                       std::optional<int64_t> stream = std::nullopt) {
+             matx::tensor_t<complex_t, 2> data_matx;
+             matx::make_tensor(data_matx, *data.to_dlpack());
+             cudaStream_t stream_ptr;
+             if (stream.has_value()) {
+               // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast,performance-no-int-to-ptr)
+               stream_ptr = reinterpret_cast<cudaStream_t>(stream.value());
+             } else {
+               cudaStreamCreateWithFlags(&stream_ptr, cudaStreamNonBlocking);
+             }
+             return RFArray(data_matx, metadata, stream_ptr);
+           }),
+           "data"_a,
+           "metadata"_a,
+           "stream"_a = py::none(),
+           doc::RFArrayTypes::doc_RFArray_python)
+      .def_property_readonly(
+          "data", [](const RFArray<complex_t>& a) { return holoscan::Tensor(a.data.ToDlPack()); })
+      .def_readonly("metadata", &RFArray<complex_t>::metadata)
+      .def_property_readonly("stream", [](const RFArray<complex_t>& a) {
+        return reinterpret_cast<int64_t>(a.stream);
+      });
 
   // Import the emitter/receiver registry from holoscan.core and pass it to this function to
   // register this new C++ type with the SDK.

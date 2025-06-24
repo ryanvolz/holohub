@@ -14,8 +14,6 @@
 # limitations under the License.
 
 set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
-set(CPACK_DEBIAN_BASIC_NETWORK-PY_PACKAGE_SHLIBDEPS OFF)
-set(CPACK_DEBIAN_RF_ARRAY-PY_PACKAGE_SHLIBDEPS OFF)
 
 holohub_configure_deb(
   NAME "holoscan-rf-array"

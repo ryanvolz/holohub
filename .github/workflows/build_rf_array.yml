@@ -35,6 +35,9 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get install -y cuda-toolkit holoscan=${{ env.BUILD_HOLOSCAN_VERSION }} libhdf5-dev
+      - name: Make libcuda.so.1 symlink
+        run: |
+          sudo ln -s /usr/local/cuda/targets/aarch64-linux/lib/stubs/libcuda.so /usr/lib/libcuda.so.1
       - name: Run build
         run: |
           ./run build holoscan-rf-array --buildpath build --configure-args "-DCMAKE_CUDA_ARCHITECTURES=87 -DCMAKE_VERBOSE_MAKEFILE=ON -DHOLOHUB_DOWNLOAD_DATASETS=OFF" --type release --parallel 4

@@ -23,11 +23,6 @@ pybind11_add_holohub_module(
     SOURCES rf_array_pybind.cpp
 )
 
-find_package(CUDAToolkit)
-target_link_libraries(rf_array_python
-    PUBLIC CUDA::cudart
-)
-
 add_custom_target(rf_array_python_params ALL
     COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_SOURCE_DIR}/params ${HOLOHUB_PYTHON_MODULE_OUT_DIR}/rf_array/params
 )

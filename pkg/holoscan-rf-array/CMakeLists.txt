@@ -13,10 +13,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-set(CPACK_DEBIAN_basic_network-cpp_PACKAGE_SHLIBDEPS ON)
-set(CPACK_DEBIAN_C_PACKAGE_SHLIBDEPS ON)
-set(CPACK_DEBIAN_rf_array-cpp_PACKAGE_SHLIBDEPS ON)
-set(CPACK_DEBIAN_sdr_mep_recorder_PACKAGE_SHLIBDEPS ON)
+set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
+set(CPACK_DEBIAN_BASIC_NETWORK-PY_PACKAGE_SHLIBDEPS OFF)
+set(CPACK_DEBIAN_RF_ARRAY-PY_PACKAGE_SHLIBDEPS OFF)
 
 holohub_configure_deb(
   NAME "holoscan-rf-array"

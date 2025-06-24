@@ -37,7 +37,7 @@ jobs:
           sudo apt-get install -y cuda-toolkit holoscan=${{ env.BUILD_HOLOSCAN_VERSION }} libhdf5-dev
       - name: Run build
         run: |
-          ./run build holoscan-rf-array --buildpath build --configure-args "-DCMAKE_CUDA_ARCHITECTURES=87 -DCMAKE_VERBOSE_MAKEFILE=OFF -DHOLOHUB_DOWNLOAD_DATASETS=OFF" --type release
+          ./run build holoscan-rf-array --buildpath build --configure-args "-DCMAKE_CUDA_ARCHITECTURES=87 -DCMAKE_VERBOSE_MAKEFILE=OFF -DHOLOHUB_DOWNLOAD_DATASETS=OFF" --type release --parallel 4
       - name: Upload DEB package artifact
         uses: actions/upload-artifact@v4
         with:

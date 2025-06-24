@@ -43,6 +43,7 @@ jobs:
         with:
           name: holoscan-rf-array-deb
           path: holoscan-rf-array_*.deb
+          if-no-files-found: error
   build_docker_image:
     name: "Build rf-array docker image for Jetson Orin"
     needs: build_holoscan_rf_array

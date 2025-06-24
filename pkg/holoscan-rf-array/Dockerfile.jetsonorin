@@ -65,7 +65,7 @@ RUN ldconfig
 #
 # Install Python dependencies not covered by deb packages
 #
-RUN python3 -m pip install --no-cache-dir numpy cupy scipy
+RUN python3 -m pip install --no-cache-dir numpy==1.26 cupy-cuda12x scipy==1.15
 
 #
 # Set up environment variables

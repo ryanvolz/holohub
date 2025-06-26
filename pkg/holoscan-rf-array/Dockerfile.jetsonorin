@@ -46,14 +46,18 @@ RUN echo "deb https://repo.download.nvidia.com/jetson/common ${JETPACK_RELEASE} 
 # Install cuda-compat-*-*
 #
 ARG RF_ARRAY_PACKAGE=holoscan-rf-array_*.deb
+ARG CUDA_VERSION_STRING=12-2
 RUN --mount=type=bind,target=/tmp/build-context \
     apt-get update \
     && dpkg --unpack /tmp/build-context/${RF_ARRAY_PACKAGE} \
-    && apt-get install -f -y \
+    && apt-get install -f -y --no-install-recommends \
+    libcublas-${CUDA_VERSION_STRING} \
+    libcufft-${CUDA_VERSION_STRING} \
+    libcurand-${CUDA_VERSION_STRING} \
+    libcusolver-${CUDA_VERSION_STRING} \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
-ARG CUDA_VERSION_STRING=12-2
 RUN apt-get update \
     && apt-get download cuda-compat-${CUDA_VERSION_STRING} \
     && dpkg-deb -R ./cuda-compat-${CUDA_VERSION_STRING}_*_arm64.deb ./cuda-compat \

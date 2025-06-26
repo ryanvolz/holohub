@@ -49,7 +49,7 @@ ARG RF_ARRAY_PACKAGE=holoscan-rf-array_*.deb
 RUN --mount=type=bind,target=/tmp/build-context \
     apt-get update \
     && dpkg --unpack /tmp/build-context/${RF_ARRAY_PACKAGE} \
-    && apt-get install -f -y --no-install-recommends \
+    && apt-get install -f -y \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 

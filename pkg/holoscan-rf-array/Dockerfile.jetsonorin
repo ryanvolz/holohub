@@ -55,10 +55,12 @@ RUN --mount=type=bind,target=/tmp/build-context \
 
 ARG CUDA_VERSION_STRING=12-2
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    cuda-nvrtc-${CUDA_VERSION_STRING} \
     libcublas-${CUDA_VERSION_STRING} \
     libcufft-${CUDA_VERSION_STRING} \
     libcurand-${CUDA_VERSION_STRING} \
     libcusolver-${CUDA_VERSION_STRING} \
+    libnvjitlink-${CUDA_VERSION_STRING} \
     && apt-get download cuda-compat-${CUDA_VERSION_STRING} \
     && dpkg-deb -R ./cuda-compat-${CUDA_VERSION_STRING}_*_arm64.deb ./cuda-compat \
     && cp -r ./cuda-compat/usr/local/* /usr/local/ \

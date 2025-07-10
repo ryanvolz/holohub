@@ -94,7 +94,8 @@ PYBIND11_MODULE(_rf_array, m) {
            doc::RFArrayTypes::doc_RFArray_python)
       .def_property_readonly(
           "data",
-          [](const RFArray<complex_int_type>& a) { return holoscan::Tensor(a.data.ToDlPack()); })
+          [](const RFArray<complex_int_type>& a) { return holoscan::Tensor(a.data.ToDlPack()); },
+          py::return_value_policy::take_ownership)
       .def_readonly("metadata", &RFArray<complex_int_type>::metadata)
       .def_property_readonly("stream", [](const RFArray<complex_int_type>& a) {
         return reinterpret_cast<int64_t>(a.stream);
@@ -119,7 +120,9 @@ PYBIND11_MODULE(_rf_array, m) {
            "stream"_a = py::none(),
            doc::RFArrayTypes::doc_RFArray_python)
       .def_property_readonly(
-          "data", [](const RFArray<complex_t>& a) { return holoscan::Tensor(a.data.ToDlPack()); })
+          "data",
+          [](const RFArray<complex_t>& a) { return holoscan::Tensor(a.data.ToDlPack()); },
+          py::return_value_policy::take_ownership)
       .def_readonly("metadata", &RFArray<complex_t>::metadata)
       .def_property_readonly("stream", [](const RFArray<complex_t>& a) {
         return reinterpret_cast<int64_t>(a.stream);

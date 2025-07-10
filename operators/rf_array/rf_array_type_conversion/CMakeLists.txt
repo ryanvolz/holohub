@@ -17,6 +17,22 @@ if (NOT TARGET holoscan::ops::rf_array)
   add_subdirectory(../rf_array ../rf_array)
 endif()
 
+add_library(rf_array_type_conversion_fc32_sc16 SHARED
+  type_conversion_fc32_sc16.cu
+)
+add_library(holoscan::ops::rf_array_type_conversion_fc32_sc16 ALIAS rf_array_type_conversion_fc32_sc16)
+target_include_directories(rf_array_type_conversion_fc32_sc16
+  PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+)
+
+target_link_libraries(rf_array_type_conversion_fc32_sc16
+  PUBLIC
+    holoscan::core
+    holoscan::ops::rf_array
+    matx::matx
+)
+
 add_library(rf_array_type_conversion_sc16_fc32 SHARED
   type_conversion_sc16_fc32.cu
 )
@@ -39,6 +55,7 @@ endif()
 
 install(
     TARGETS
+      rf_array_type_conversion_fc32_sc16
       rf_array_type_conversion_sc16_fc32
     COMPONENT rf_array-cpp
 )

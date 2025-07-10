@@ -15,7 +15,14 @@
 
 from dataclasses import dataclass
 
-__all__ = ["TypeConversionComplexIntToFloatParams"]
+__all__ = ["TypeConversionComplexFloatToIntParams", "TypeConversionComplexIntToFloatParams"]
+
+
+@dataclass
+class TypeConversionComplexFloatToIntParams:
+    """Complex float to int conversion parameters"""
+
+    pass
 
 
 @dataclass

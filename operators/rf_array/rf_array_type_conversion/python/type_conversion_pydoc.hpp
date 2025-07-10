@@ -43,6 +43,26 @@ Parameters
 fragment : Fragment
     The fragment that the operator belongs to.
 )doc")
+
+// PyTypeConversionComplexFloatToInt Constructor
+PYDOC(TypeConversionComplexFloatToInt_python, R"doc(
+    Operator that converts a complex float (fc32) RFArray to complex short (sc16).
+
+    **==Named Inputs==**
+
+        rf_in : RFArray_fc32
+            RFArray with data shape (chunk_size, num_subchannels).
+
+    **==Named Outputs==**
+
+        rf_out : RFArray_sc16
+            RFArray with data shape (chunk_size, num_subchannels).
+
+    Parameters
+    ----------
+    fragment : Fragment
+        The fragment that the operator belongs to.
+    )doc")
 }  // namespace TypeConversion
 
 }  // namespace holoscan::doc

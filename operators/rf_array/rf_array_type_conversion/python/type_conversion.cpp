@@ -26,6 +26,7 @@
 
 #include "../../../operator_util.hpp"
 #include "./type_conversion_pydoc.hpp"
+#include "rf_array/type_conversion_fc32_sc16.h"
 #include "rf_array/type_conversion_sc16_fc32.h"
 
 using std::string_literals::operator""s;
@@ -52,6 +53,23 @@ class PyTypeConversionComplexIntToFloat : public TypeConversionComplexIntToFloat
   }
 };
 
+class PyTypeConversionComplexFloatToInt : public TypeConversionComplexFloatToInt {
+ public:
+  // Inherit the constructors
+  using TypeConversionComplexFloatToInt::TypeConversionComplexFloatToInt;
+
+  // Define a constructor that fully initializes the object.
+  PyTypeConversionComplexFloatToInt(Fragment* fragment, const py::args& args,
+                                    const std::string& name = "type_conversion_fc32_sc16")
+      : TypeConversionComplexFloatToInt(ArgList{}) {
+    add_positional_condition_and_resource_args(this, args);
+    name_ = name;
+    fragment_ = fragment;
+    spec_ = std::make_shared<OperatorSpec>(fragment);
+    setup(*spec_.get());
+  }
+};
+
 void bind_rf_array_type_conversion(py::module& m) {
   py::class_<TypeConversionComplexIntToFloat,
              PyTypeConversionComplexIntToFloat,
@@ -64,6 +82,18 @@ void bind_rf_array_type_conversion(py::module& m) {
            "fragment"_a,
            "name"_a = "type_conversion_sc16_fc32"s,
            doc::TypeConversion::doc_TypeConversionComplexIntToFloat_python);
+
+  py::class_<TypeConversionComplexFloatToInt,
+             PyTypeConversionComplexFloatToInt,
+             Operator,
+             std::shared_ptr<TypeConversionComplexFloatToInt>>(
+      m,
+      "TypeConversionComplexFloatToInt",
+      doc::TypeConversion::doc_TypeConversionComplexFloatToInt_python)
+      .def(py::init<Fragment*, const py::args&, const std::string&>(),
+           "fragment"_a,
+           "name"_a = "type_conversion_fc32_sc16"s,
+           doc::TypeConversion::doc_TypeConversionComplexFloatToInt_python);
 }
 
 }  // namespace holoscan::ops

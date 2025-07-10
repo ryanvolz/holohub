@@ -42,19 +42,14 @@ ADD --chmod=664 https://repo.download.nvidia.com/jetson/nvidia-repo-pin-600 /etc
 RUN echo "deb https://repo.download.nvidia.com/jetson/common ${JETPACK_RELEASE} main" >> /etc/apt/sources.list.d/nvidia-l4t-apt-source.list
 
 #
-# Install holoscan-rf-array and its dependencies (e.g. holoscan)
-# Install cuda-compat-*-*
+# Install rf-array dependencies and needed cuda stuff
+# (do this before holoscan because it shouldn't change as often)
 #
-ARG RF_ARRAY_PACKAGE=holoscan-rf-array_*.deb
-RUN --mount=type=bind,target=/tmp/build-context \
-    apt-get update \
-    && dpkg --unpack /tmp/build-context/${RF_ARRAY_PACKAGE} \
-    && apt-get install -f -y --no-install-recommends \
-    && rm -rf /var/lib/apt/lists/* \
-    && apt-get clean
-
 ARG CUDA_VERSION_STRING=12-2
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    holoscan \
+    python3-numpy \
+    python3-scipy \
     cuda-nvrtc-${CUDA_VERSION_STRING} \
     libcublas-${CUDA_VERSION_STRING} \
     libcufft-${CUDA_VERSION_STRING} \
@@ -68,12 +63,23 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
-RUN ldconfig
-
 #
 # Install Python dependencies not covered by deb packages
 #
 RUN python3 -m pip install --no-cache-dir numpy==1.26 cupy-cuda12x scipy==1.15
+
+#
+# Install holoscan-rf-array and its dependencies (e.g. holoscan)
+#
+ARG RF_ARRAY_PACKAGE=holoscan-rf-array_*.deb
+RUN --mount=type=bind,target=/tmp/build-context \
+    apt-get update \
+    && dpkg --unpack /tmp/build-context/${RF_ARRAY_PACKAGE} \
+    && apt-get install -f -y --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+RUN ldconfig
 
 #
 # Set up environment variables

@@ -106,12 +106,11 @@ PYBIND11_MODULE(_rf_array, m) {
                        std::optional<int64_t> stream = std::nullopt) {
              matx::tensor_t<complex_t, 2> data_matx;
              matx::make_tensor(data_matx, *data.to_dlpack());
-             cudaStream_t stream_ptr;
+             cudaStream_t stream_ptr = nullptr;  // legacy default stream
              if (stream.has_value()) {
+               int64_t stream_id = stream.value();
                // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast,performance-no-int-to-ptr)
-               stream_ptr = reinterpret_cast<cudaStream_t>(stream.value());
-             } else {
-               cudaStreamCreateWithFlags(&stream_ptr, cudaStreamNonBlocking);
+               if (stream_id > 2) { stream_ptr = reinterpret_cast<cudaStream_t>(stream_id); }
              }
              return RFArray(data_matx, metadata, stream_ptr);
            }),

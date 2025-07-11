@@ -54,6 +54,8 @@ freq_idx_scaling : float
 freq_idx_offset : float
     Additive offset to apply to the center frequency calculated from header
     metadata: ``center_freq = freq_idx_scaling * freq_idx + freq_idx_offset``.
+apply_conjugate : bool, optional
+    Whether or not to take the complex conjugate of the RF data (i.e. invert spectrum).
 spoof_header : bool, optional
     Whether or not to ignore the packet header and spoof its metadata.
 packet_skip_bytes : int, optional

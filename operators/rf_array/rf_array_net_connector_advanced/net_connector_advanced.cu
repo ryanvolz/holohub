@@ -56,6 +56,12 @@ void NetConnectorAdvanced::setup(OperatorSpec& spec) {
                      "Additive offset to apply to the center frequency calculated from header "
                      "metadata: center_freq = freq_idx_scaling * freq_idx + freq_idx_offset",
                      0);
+  spec.param<bool>(
+      apply_conjugate_,
+      "apply_conjugate",
+      "Apply complex conjugate to the data",
+      "Whether or not to take the complex conjugate of the RF data (i.e. invert spectrum)",
+      false);
   spec.param<bool>(spoof_header_,
                    "spoof_header",
                    "Spoof the RFMetadata header",
@@ -171,8 +177,24 @@ void NetConnectorAdvanced::initialize() {
     cudaStreamCreateWithFlags(&streams_[n], cudaStreamNonBlocking);
     cudaEventCreate(&events_[n]);
     // Warmup
-    place_packet_data(
-        nullptr, nullptr, nullptr, 0, 0, 0, 16, 16, 0, 0, 0, 0, 0, nullptr, 0, 0, streams_[n]);
+    place_packet_data(nullptr,
+                      nullptr,
+                      nullptr,
+                      0,
+                      0,
+                      0,
+                      16,
+                      16,
+                      0,
+                      0,
+                      0,
+                      0,
+                      0,
+                      false,
+                      nullptr,
+                      0,
+                      0,
+                      streams_[n]);
     cudaStreamSynchronize(streams_[n]);
   }
 
@@ -384,6 +406,7 @@ void NetConnectorAdvanced::compute(InputContext& op_input, OutputContext& op_out
                         max_samples_per_packet,
                         freq_idx_scaling_.get(),
                         freq_idx_offset_.get(),
+                        apply_conjugate_.get(),
                         spoof_header_d,
                         ttl_pkts_recv_,            // only needed if spoofing packets
                         packet_skip_bytes_.get(),  // only needed if spoofing packets

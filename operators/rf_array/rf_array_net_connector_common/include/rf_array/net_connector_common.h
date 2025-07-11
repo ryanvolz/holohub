@@ -208,6 +208,6 @@ void place_packet_data(sample_t* out, RFMetadata* out_metadata, void* const* con
                        const uint32_t num_pkts, const uint16_t buffer_size,
                        const uint32_t num_samples, const uint16_t num_subchannels,
                        const uint32_t max_samples_per_packet, const double freq_idx_scaling,
-                       const double freq_idx_offset, const RFPacketHeader* spoof_header,
-                       const uint64_t total_pkts, const uint16_t packet_skip_bytes,
-                       cudaStream_t stream);
+                       const double freq_idx_offset, const bool apply_conjugate,
+                       const RFPacketHeader* spoof_header, const uint64_t total_pkts,
+                       const uint16_t packet_skip_bytes, cudaStream_t stream);

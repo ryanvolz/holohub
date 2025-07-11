@@ -49,6 +49,7 @@ class NetConnectorBasic : public Operator {
   // Packet header settings
   Parameter<double> freq_idx_scaling_;
   Parameter<double> freq_idx_offset_;
+  Parameter<bool> apply_conjugate_;
   Parameter<bool> spoof_header_;
   Parameter<uint16_t> packet_skip_bytes_;
   Parameter<std::map<std::string, uint64_t>> header_metadata_;

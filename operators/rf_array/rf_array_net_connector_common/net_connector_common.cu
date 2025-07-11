@@ -22,8 +22,8 @@ __global__ void place_packet_data_kernel(
     int* sample_cnt, bool* received_end, unsigned long long int* buffer_counter,
     const uint16_t buffer_size, const uint32_t num_samples, const uint16_t num_subchannels,
     const uint32_t max_samples_per_packet, const double freq_idx_scaling,
-    const double freq_idx_offset, const RFPacketHeader* spoof_header, const uint64_t total_pkts,
-    const uint16_t packet_skip_bytes) {
+    const double freq_idx_offset, bool apply_conjugate, const RFPacketHeader* spoof_header,
+    const uint64_t total_pkts, const uint16_t packet_skip_bytes) {
   const uint32_t sample_stride = static_cast<uint32_t>(num_subchannels);
   const uint32_t buffer_stride = sample_stride * num_samples;
   const uint32_t pkt_idx = blockIdx.x;
@@ -69,6 +69,7 @@ __global__ void place_packet_data_kernel(
       // Copy data
       for (uint32_t i = threadIdx.x; i < samples_to_write * num_subchannels; i += blockDim.x) {
         out[idx_offset + i] = samples[pkt_iq_idx + i];
+        if (apply_conjugate) { out[idx_offset + i].i *= -1; }
       }
 
       if (threadIdx.x == 0) {
@@ -107,9 +108,9 @@ void place_packet_data(sample_t* out, RFMetadata* out_metadata, void* const* con
                        const uint32_t num_pkts, const uint16_t buffer_size,
                        const uint32_t num_samples, const uint16_t num_subchannels,
                        const uint32_t max_samples_per_packet, const double freq_idx_scaling,
-                       const double freq_idx_offset, const RFPacketHeader* spoof_header,
-                       const uint64_t total_pkts, const uint16_t packet_skip_bytes,
-                       cudaStream_t stream) {
+                       const double freq_idx_offset, bool apply_conjugate,
+                       const RFPacketHeader* spoof_header, const uint64_t total_pkts,
+                       const uint16_t packet_skip_bytes, cudaStream_t stream) {
   // Each block processes an individual packet
   place_packet_data_kernel<<<num_pkts, 128, buffer_size * sizeof(int), stream>>>(
       out,
@@ -124,6 +125,7 @@ void place_packet_data(sample_t* out, RFMetadata* out_metadata, void* const* con
       max_samples_per_packet,
       freq_idx_scaling,
       freq_idx_offset,
+      apply_conjugate,
       spoof_header,
       total_pkts,
       packet_skip_bytes);

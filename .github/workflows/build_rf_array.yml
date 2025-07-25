@@ -110,6 +110,8 @@ jobs:
           context: ${{ env.IMAGE_CONTEXT }}
           file: ${{ env.IMAGE_DOCKERFILE }}
           push: true
+          cache-from: type=registry,ref=${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME}}-build-cache
+          cache-to: type=registry,ref=${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME}}-build-cache,compression=zstd
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: RELEASE=${{ env.IMAGE_JETPACK_RELEASE }}

@@ -158,7 +158,7 @@ struct BufferTracking {
       src = received_end_d;
       dst = received_end_h;
     } else {
-      HOLOSCAN_LOG_ERROR("Unknown option {}", kind);
+      HOLOSCAN_LOG_ERROR("Unknown option {}", fmt::underlying(kind));
       return cudaErrorInvalidValue;
     }
     return cudaMemcpyAsync(dst, src, buffer_size * sizeof(bool), kind, stream);

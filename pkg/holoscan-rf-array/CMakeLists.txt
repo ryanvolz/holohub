@@ -18,7 +18,7 @@ set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
 holohub_configure_deb(
   NAME "holoscan-rf-array"
   DESCRIPTION "Holoscan RF Array operators"
-  VERSION "0.1.0"
+  VERSION "0.2.0"
   VENDOR "MIT Haystack Observatory"
   CONTACT "Ryan Volz <rvolz@mit.edu>"
   COMPONENTS
@@ -28,5 +28,5 @@ holohub_configure_deb(
     rf_array-cpp
     rf_array-py
     sdr_mep_recorder
-  DEPENDS "holoscan (>= 2.5), holoscan (<< 4.0), python3-numpy, python3-scipy"
+  DEPENDS "holoscan (>= 2.9), holoscan (<< 4.0), python3-numpy, python3-scipy"
 )

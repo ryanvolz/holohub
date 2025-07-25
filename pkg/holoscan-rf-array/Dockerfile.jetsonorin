@@ -36,7 +36,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 #
 # Configure nvidia apt repo
 #
-ARG JETPACK_RELEASE=r36.3
+ARG JETPACK_RELEASE=r36.4
 ADD --chmod=664 https://repo.download.nvidia.com/jetson/jetson-ota-public.asc /etc/apt/trusted.gpg.d/
 ADD --chmod=664 https://repo.download.nvidia.com/jetson/nvidia-repo-pin-600 /etc/apt/preferences.d/
 RUN echo "deb https://repo.download.nvidia.com/jetson/common ${JETPACK_RELEASE} main" >> /etc/apt/sources.list.d/nvidia-l4t-apt-source.list
@@ -45,7 +45,7 @@ RUN echo "deb https://repo.download.nvidia.com/jetson/common ${JETPACK_RELEASE} 
 # Install rf-array dependencies and needed cuda stuff
 # (do this before holoscan because it shouldn't change as often)
 #
-ARG CUDA_VERSION_STRING=12-2
+ARG CUDA_VERSION_STRING=12-6
 RUN apt-get update && apt-get install -y --no-install-recommends \
     holoscan \
     python3-numpy \

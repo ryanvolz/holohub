@@ -13,8 +13,8 @@
       "0.1": "Initial Release"
     },
     "holoscan_sdk": {
-      "minimum_required_version": "2.5.0",
-      "tested_versions": ["2.5.0"]
+      "minimum_required_version": "2.9.0",
+      "tested_versions": ["3.4.0"]
     },
     "platforms": ["amd64", "arm64"],
     "tags": ["Networking", "Network", "UDP", "IP", "Recording", "SDR", "Signal Processing"],

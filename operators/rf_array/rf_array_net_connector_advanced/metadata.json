@@ -15,9 +15,9 @@
         "platforms": ["x86_64", "aarch64"],
         "tags": ["Network", "Networking", "UDP", "RF"],
         "holoscan_sdk": {
-            "minimum_required_version": "2.5.0",
+            "minimum_required_version": "2.9.0",
             "tested_versions": [
-                "2.5.0"
+                "3.4.0"
             ]
         },
         "ranking": 1,

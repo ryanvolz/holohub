@@ -11,13 +11,13 @@ on:
 
 env:
   BUILD_CUDA_KEYRING: https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/arm64/cuda-keyring_1.1-1_all.deb
-  BUILD_HOLOSCAN_VERSION: 2.5.0.1-1
+  BUILD_HOLOSCAN_VERSION: 3.4.0.2-1
   DOCKER_REGISTRY: ghcr.io
   IMAGE_CONTEXT: pkg/holoscan-rf-array
   IMAGE_DOCKERFILE: pkg/holoscan-rf-array/Dockerfile.jetsonorin
   IMAGE_NAME: ${{ github.repository }}/rf-array
-  IMAGE_JETPACK_RELEASE: r36.3
-  IMAGE_CUDA_VERSION_STRING: 12-2
+  IMAGE_JETPACK_RELEASE: r36.4
+  IMAGE_CUDA_VERSION_STRING: 12-6
   IMAGE_RF_ARRAY_PACKAGE: holoscan-rf-array_*.deb
 
 jobs:

@@ -45,7 +45,7 @@ void TypeConversionComplexFloatToInt::compute(InputContext& op_input, OutputCont
   auto in_vector = op_input.receive<RFMessage<complex_t>>("rf_in").value();
   cudaStream_t stream = op_input.receive_cuda_stream("rf_in");
 
-  RFMessage<complex_t> out_msg;
+  RFMessage<sample_t> out_msg;
 
   for (auto in : in_vector) {
     HOLOSCAN_LOG_TRACE("Dim: {}, {}", in->data.Size(0), in->data.Size(1));

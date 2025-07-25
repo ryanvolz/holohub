@@ -61,7 +61,7 @@ void SubchannelSelect<sampleType>::compute(InputContext& op_input, OutputContext
   auto in_vector = op_input.receive<RFMessage<sampleType>>("rf_in").value();
   cudaStream_t stream = op_input.receive_cuda_stream("rf_in");
 
-  RFMessage<complex_t> out_msg;
+  RFMessage<sampleType> out_msg;
 
   for (auto in : in_vector) {
     auto out_tensor = matx::make_tensor<sampleType>(

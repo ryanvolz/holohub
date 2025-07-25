@@ -75,68 +75,41 @@ PYBIND11_MODULE(_rf_array, m) {
       .def_readonly("center_freq", &RFMetadata::center_freq);
 
   py::class_<RFArray<complex_int_type>>(m, "RFArray_sc16", doc::RFArrayTypes::doc_RFArray_python)
-      .def(py::init([](holoscan::Tensor data,
-                       RFMetadata metadata,
-                       std::optional<int64_t> stream = std::nullopt) {
+      .def(py::init([](holoscan::Tensor data, RFMetadata metadata) {
              matx::tensor_t<complex_int_type, 2> data_matx;
              matx::make_tensor(data_matx, *data.to_dlpack());
-             cudaStream_t stream_ptr = nullptr;  // legacy default stream
-             if (stream.has_value()) {
-               int64_t stream_id = stream.value();
-               // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast,performance-no-int-to-ptr)
-               if (stream_id > 2) { stream_ptr = reinterpret_cast<cudaStream_t>(stream_id); }
-             }
-             return RFArray(data_matx, metadata, stream_ptr);
+             return RFArray(data_matx, metadata);
            }),
            "data"_a,
            "metadata"_a,
-           "stream"_a = py::none(),
            doc::RFArrayTypes::doc_RFArray_python)
       .def_property_readonly(
           "data",
           [](const RFArray<complex_int_type>& a) { return holoscan::Tensor(a.data.ToDlPack()); },
           py::return_value_policy::take_ownership)
-      .def_readonly("metadata", &RFArray<complex_int_type>::metadata)
-      .def_property_readonly("stream", [](const RFArray<complex_int_type>& a) {
-        return reinterpret_cast<int64_t>(a.stream);
-      });
+      .def_readonly("metadata", &RFArray<complex_int_type>::metadata);
 
   py::class_<RFArray<complex_t>>(m, "RFArray_fc32", doc::RFArrayTypes::doc_RFArray_python)
-      .def(py::init([](holoscan::Tensor data,
-                       RFMetadata metadata,
-                       std::optional<int64_t> stream = std::nullopt) {
+      .def(py::init([](holoscan::Tensor data, RFMetadata metadata) {
              matx::tensor_t<complex_t, 2> data_matx;
              matx::make_tensor(data_matx, *data.to_dlpack());
-             cudaStream_t stream_ptr = nullptr;  // legacy default stream
-             if (stream.has_value()) {
-               int64_t stream_id = stream.value();
-               // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast,performance-no-int-to-ptr)
-               if (stream_id > 2) { stream_ptr = reinterpret_cast<cudaStream_t>(stream_id); }
-             }
-             return RFArray(data_matx, metadata, stream_ptr);
+             return RFArray(data_matx, metadata);
            }),
            "data"_a,
            "metadata"_a,
-           "stream"_a = py::none(),
            doc::RFArrayTypes::doc_RFArray_python)
       .def_property_readonly(
           "data",
           [](const RFArray<complex_t>& a) { return holoscan::Tensor(a.data.ToDlPack()); },
           py::return_value_policy::take_ownership)
-      .def_readonly("metadata", &RFArray<complex_t>::metadata)
-      .def_property_readonly("stream", [](const RFArray<complex_t>& a) {
-        return reinterpret_cast<int64_t>(a.stream);
-      });
+      .def_readonly("metadata", &RFArray<complex_t>::metadata);
 
   // Import the emitter/receiver registry from holoscan.core and pass it to this function to
   // register this new C++ type with the SDK.
   m.def("register_types", [](EmitterReceiverRegistry& registry) {
-    registry.add_emitter_receiver<std::shared_ptr<RFArray<complex_t>>>(
-        "std::shared_ptr<RFArray<complex_t>>"s);
-    registry.add_emitter_receiver<std::shared_ptr<RFArray<complex_int_type>>>(
-        "std::shared_ptr<RFArray<complex_int_type>>"s);
-    registry.add_emitter_receiver<std::shared_ptr<RFArray<sample_t>>>(
-        "std::shared_ptr<RFArray<sample_t>>"s);
+    registry.add_emitter_receiver<RFMessage<complex_t>>("RFMessage<complex_t>"s);
+    registry.add_emitter_receiver<RFMessage<complex_int_type>>("RFMessage<complex_int_type>"s);
+    registry.add_emitter_receiver<RFMessage<sample_t>>("RFMessage<sample_t>"s);
   });
 
 #ifdef RF_ARRAY_DIGITAL_RF

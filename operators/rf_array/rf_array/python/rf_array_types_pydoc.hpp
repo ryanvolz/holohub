@@ -48,8 +48,6 @@ data : matx::tensor_t<sampleType, 2>, shape (num_samples, num_subchannels)
     Array of RF samples.
 metadata : RFMetadata
     Metadata corresponding to the RF data.
-stream : cudaStream_t
-    CUDA stream to be used for processing the data.
 )doc")
 }  // namespace RFArrayTypes
 

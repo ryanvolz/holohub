@@ -25,12 +25,8 @@ namespace holoscan::ops {
 // ----- SubchannelSelect ---------------------------------------------------
 template <typename sampleType>
 void SubchannelSelect<sampleType>::setup(OperatorSpec& spec) {
-  // RFArray inputs need a higher capacity in case they are connected to network connector
-  // which can put multiple messages into the buffer
-  spec.input<std::shared_ptr<RFArray<sampleType>>>("rf_in").connector(
-      holoscan::IOSpec::ConnectorType::kDoubleBuffer,
-      holoscan::Arg("capacity", static_cast<uint64_t>(100)));
-  spec.output<std::shared_ptr<RFArray<sampleType>>>("rf_out");
+  spec.input<RFMessage<sampleType>>("rf_in");
+  spec.output<RFMessage<sampleType>>("rf_out");
 
   spec.param<std::vector<int, std::allocator<int>>>(
       subchannel_idx,
@@ -62,15 +58,20 @@ template <typename sampleType>
 void SubchannelSelect<sampleType>::compute(InputContext& op_input, OutputContext& op_output,
                                            ExecutionContext&) {
   HOLOSCAN_LOG_TRACE("SubchannelSelect::compute() called");
-  auto in = op_input.receive<std::shared_ptr<RFArray<sampleType>>>("rf_in").value();
-  cudaStream_t stream = in->stream;
+  auto in = op_input.receive<RFMessage<sampleType>>("rf_in").value();
+  cudaStream_t stream = op_input.receive_cuda_stream("rf_in");
 
-  auto out_tensor = matx::make_tensor<sampleType>(
-      {in->data.Size(0), idx_len}, matx::MATX_ASYNC_DEVICE_MEMORY, stream);
-  (out_tensor = matx::remap<1>(in->data, subchannel_idx_tensor)).run(stream);
+  RFMessage<complex_t> out_msg;
 
-  auto params = std::make_shared<RFArray<sampleType>>(out_tensor, in->metadata, stream);
-  op_output.emit(params, "rf_out");
+  for (auto in : in_vector) {
+    auto out_tensor = matx::make_tensor<sampleType>(
+        {in->data.Size(0), idx_len}, matx::MATX_ASYNC_DEVICE_MEMORY, stream);
+    (out_tensor = matx::remap<1>(in->data, subchannel_idx_tensor)).run(stream);
+
+    auto params = std::make_shared<RFArray<sampleType>>(out_tensor, in->metadata);
+    out_msg.push_back(params);
+  }
+  op_output.emit(out_msg, "rf_out");
 }
 
 template class SubchannelSelect<complex_int_type>;

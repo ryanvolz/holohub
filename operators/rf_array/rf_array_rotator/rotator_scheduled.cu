@@ -24,12 +24,8 @@ namespace holoscan::ops {
 
 // ----- RotatorScheduled ---------------------------------------------------
 void RotatorScheduled::setup(OperatorSpec& spec) {
-  // RFArray inputs need a higher capacity in case they are connected to network connector
-  // which can put multiple messages into the buffer
-  spec.input<std::shared_ptr<RFArray<complex_t>>>("rf_in").connector(
-      holoscan::IOSpec::ConnectorType::kDoubleBuffer,
-      holoscan::Arg("capacity", static_cast<uint64_t>(100)));
-  spec.output<std::shared_ptr<RFArray<complex_t>>>("rf_out");
+  spec.input<RFMessage<complex_t>>("rf_in");
+  spec.output<RFMessage<complex_t>>("rf_out");
   spec.param<double>(cycle_duration_secs,
                      "cycle_duration_secs",
                      "Cycle duration in seconds",
@@ -85,107 +81,114 @@ void RotatorScheduled::initialize() {
 void RotatorScheduled::compute(InputContext& op_input, OutputContext& op_output,
                                ExecutionContext&) {
   HOLOSCAN_LOG_TRACE("RotatorScheduled::compute() called");
-  auto in = op_input.receive<std::shared_ptr<RFArray<complex_t>>>("rf_in").value();
-  cudaStream_t stream = in->stream;
+  auto in_vector = op_input.receive<RFMessage<complex_t>>("rf_in").value();
+  cudaStream_t stream = op_input.receive_cuda_stream("rf_in");
 
-  // calculate center frequency and timestamp of the data chunk from metadata
-  double center_freq = in->metadata.center_freq;
-  double sample_rate = static_cast<double>(in->metadata.sample_rate_numerator) /
-                       static_cast<double>(in->metadata.sample_rate_denominator);
-  uint64_t sample_sec;
-  uint64_t picosecond;
-  // copied from digital_rf, until function is exported
-  //   digital_rf_get_timestamp_floor(in->metadata.sample_idx,
-  //                                  in->metadata.sample_rate_numerator,
-  //                                  in->metadata.sample_rate_denominator,
-  //                                  &sample_sec,
-  //                                  &picosecond);
-  // calculate with divide/modulus split to avoid overflow
-  // second = si * d / n = ((si / n) * d) + ((si % n) * d) / n
-  uint64_t tmp_div;
-  uint64_t tmp_mod;
-  uint64_t tmp;
-  tmp_div = in->metadata.sample_idx / in->metadata.sample_rate_numerator;
-  tmp_mod = in->metadata.sample_idx % in->metadata.sample_rate_numerator;
-  sample_sec = tmp_div * in->metadata.sample_rate_denominator;
-  tmp = tmp_mod * in->metadata.sample_rate_denominator;
-  tmp_div = tmp / in->metadata.sample_rate_numerator;
-  tmp_mod = tmp % in->metadata.sample_rate_numerator;
-  sample_sec += tmp_div;
-  // picoseconds calculated from remainder of division to calculate seconds
-  // picsecond = rem * 1e12 / n = rem * (1e12 / n) + (rem * (1e12 % n)) / n
-  tmp = tmp_mod;
-  tmp_div = 1000000000000 / in->metadata.sample_rate_numerator;
-  tmp_mod = 1000000000000 % in->metadata.sample_rate_numerator;
-  picosecond = (tmp * tmp_div) + (tmp * tmp_mod / in->metadata.sample_rate_numerator);
+  RFMessage<complex_t> out_msg;
 
-  double timestamp = sample_sec + picosecond / 1e12;
+  for (auto in : in_vector) {
+    // calculate center frequency and timestamp of the data chunk from metadata
+    double center_freq = in->metadata.center_freq;
+    double sample_rate = static_cast<double>(in->metadata.sample_rate_numerator) /
+                         static_cast<double>(in->metadata.sample_rate_denominator);
+    uint64_t sample_sec;
+    uint64_t picosecond;
+    // copied from digital_rf, until function is exported
+    //   digital_rf_get_timestamp_floor(in->metadata.sample_idx,
+    //                                  in->metadata.sample_rate_numerator,
+    //                                  in->metadata.sample_rate_denominator,
+    //                                  &sample_sec,
+    //                                  &picosecond);
+    // calculate with divide/modulus split to avoid overflow
+    // second = si * d / n = ((si / n) * d) + ((si % n) * d) / n
+    uint64_t tmp_div;
+    uint64_t tmp_mod;
+    uint64_t tmp;
+    tmp_div = in->metadata.sample_idx / in->metadata.sample_rate_numerator;
+    tmp_mod = in->metadata.sample_idx % in->metadata.sample_rate_numerator;
+    sample_sec = tmp_div * in->metadata.sample_rate_denominator;
+    tmp = tmp_mod * in->metadata.sample_rate_denominator;
+    tmp_div = tmp / in->metadata.sample_rate_numerator;
+    tmp_mod = tmp % in->metadata.sample_rate_numerator;
+    sample_sec += tmp_div;
+    // picoseconds calculated from remainder of division to calculate seconds
+    // picsecond = rem * 1e12 / n = rem * (1e12 / n) + (rem * (1e12 % n)) / n
+    tmp = tmp_mod;
+    tmp_div = 1000000000000 / in->metadata.sample_rate_numerator;
+    tmp_mod = 1000000000000 % in->metadata.sample_rate_numerator;
+    picosecond = (tmp * tmp_div) + (tmp * tmp_mod / in->metadata.sample_rate_numerator);
 
-  // get our time elapsed within the cycle
-  auto cycle_timestamp = fmod((timestamp - cycle_start_timestamp.get()), cycle_duration_secs.get());
+    double timestamp = sample_sec + picosecond / 1e12;
 
-  // use time elapsed within cycle to figure out what step we're on and get its parameters
-  auto step_start = schedule[schedule_idx].first;
-  auto step_stop = schedule[schedule_idx + 1].first;
-  while (!(cycle_timestamp >= step_start && cycle_timestamp < step_stop)) {
-    schedule_idx++;
-    if (schedule_idx + 1 >= schedule.size()) { schedule_idx = 0; }
-    step_start = schedule[schedule_idx].first;
-    step_stop = schedule[schedule_idx + 1].first;
-  }
-  auto step_freq = schedule[schedule_idx].second;
+    // get our time elapsed within the cycle
+    auto cycle_timestamp =
+        fmod((timestamp - cycle_start_timestamp.get()), cycle_duration_secs.get());
 
-  HOLOSCAN_LOG_DEBUG(
-      "Data timestamp {}: {} seconds since beginning of cycle, schedule index {}, step frequency "
-      "{}",
-      timestamp,
-      cycle_timestamp,
-      schedule_idx,
-      step_freq);
-
-  if (step_freq >= 0) {
-    // set up the desired rotation
-    auto freq_shift = center_freq - step_freq;
-    if (std::abs(freq_shift) > sample_rate / 2) {
-      HOLOSCAN_LOG_WARN(
-          "Shifting frequency of {} to tuned center of {} results in a shift of {}, which is "
-          "greater than the sample rate {}. Shift will be aliased.",
-          step_freq,
-          center_freq,
-          freq_shift,
-          sample_rate);
+    // use time elapsed within cycle to figure out what step we're on and get its parameters
+    auto step_start = schedule[schedule_idx].first;
+    auto step_stop = schedule[schedule_idx + 1].first;
+    while (!(cycle_timestamp >= step_start && cycle_timestamp < step_stop)) {
+      schedule_idx++;
+      if (schedule_idx + 1 >= schedule.size()) { schedule_idx = 0; }
+      step_start = schedule[schedule_idx].first;
+      step_stop = schedule[schedule_idx + 1].first;
     }
-    auto aliased_freq_shift = fmod(freq_shift + sample_rate / 2, sample_rate) - sample_rate / 2;
+    auto step_freq = schedule[schedule_idx].second;
+
     HOLOSCAN_LOG_DEBUG(
-        "Applying frequency shift of {} (moving desired frequency of {} to baseband at center freq "
-        "of {})",
-        aliased_freq_shift,
-        step_freq,
-        center_freq);
-    double phase_increment = 2 * M_PI * aliased_freq_shift / sample_rate;
-    double phase = 2 * M_PI * aliased_freq_shift * (cycle_timestamp - step_start);
+        "Data timestamp {}: {} seconds since beginning of cycle, schedule index {}, step frequency "
+        "{}",
+        timestamp,
+        cycle_timestamp,
+        schedule_idx,
+        step_freq);
 
-    // do the rotation
-    auto in_data_flipped = in->data.Permute({1, 0});
-    auto phase_range = matx::range<0>({in_data_flipped.Size(1)}, phase, phase_increment);
-    // want expj to operate on double for accuracy, but then cast to float (complex_t)
-    // for compatibility with input data
-    auto rotator = matx::as_type<complex_t>(matx::expj(phase_range));
+    if (step_freq >= 0) {
+      // set up the desired rotation
+      auto freq_shift = center_freq - step_freq;
+      if (std::abs(freq_shift) > sample_rate / 2) {
+        HOLOSCAN_LOG_WARN(
+            "Shifting frequency of {} to tuned center of {} results in a shift of {}, which is "
+            "greater than the sample rate {}. Shift will be aliased.",
+            step_freq,
+            center_freq,
+            freq_shift,
+            sample_rate);
+      }
+      auto aliased_freq_shift = fmod(freq_shift + sample_rate / 2, sample_rate) - sample_rate / 2;
+      HOLOSCAN_LOG_DEBUG(
+          "Applying frequency shift of {} (moving desired frequency of {} to baseband at center "
+          "freq "
+          "of {})",
+          aliased_freq_shift,
+          step_freq,
+          center_freq);
+      double phase_increment = 2 * M_PI * aliased_freq_shift / sample_rate;
+      double phase = 2 * M_PI * aliased_freq_shift * (cycle_timestamp - step_start);
 
-    auto out_data =
-        matx::make_tensor<complex_t>(in->data.Shape(), matx::MATX_ASYNC_DEVICE_MEMORY, stream);
-    auto out_data_flipped = out_data.Permute({1, 0});
+      // do the rotation
+      auto in_data_flipped = in->data.Permute({1, 0});
+      auto phase_range = matx::range<0>({in_data_flipped.Size(1)}, phase, phase_increment);
+      // want expj to operate on double for accuracy, but then cast to float (complex_t)
+      // for compatibility with input data
+      auto rotator = matx::as_type<complex_t>(matx::expj(phase_range));
 
-    (out_data_flipped = in_data_flipped * rotator).run(stream);
+      auto out_data =
+          matx::make_tensor<complex_t>(in->data.Shape(), matx::MATX_ASYNC_DEVICE_MEMORY, stream);
+      auto out_data_flipped = out_data.Permute({1, 0});
 
-    auto out_metadata = in->metadata;
-    out_metadata.center_freq = step_freq;
+      (out_data_flipped = in_data_flipped * rotator).run(stream);
 
-    auto params = std::make_shared<RFArray<complex_t>>(out_data, out_metadata, stream);
-    op_output.emit(params, "rf_out");
-  } else {
-    op_output.emit(in, "rf_out");
+      auto out_metadata = in->metadata;
+      out_metadata.center_freq = step_freq;
+
+      auto params = std::make_shared<RFArray<complex_t>>(out_data, out_metadata);
+      out_msg.push_back(params);
+    } else {
+      out_msg.push_back(in);
+    }
   }
+  op_output.emit(out_msg, "rf_out");
 }
 
 }  // namespace holoscan::ops

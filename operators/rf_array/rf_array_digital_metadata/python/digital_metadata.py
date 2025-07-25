@@ -48,8 +48,8 @@ class DigitalMetadataSink(holoscan.core.Operator):
 
         **==Named Inputs==**
 
-            rf_in : RFArray
-                RFArray, including metadata.
+            rf_in : RFMessage
+                List of RFArray, including metadata.
 
         Parameters
         ----------
@@ -85,7 +85,7 @@ class DigitalMetadataSink(holoscan.core.Operator):
         self.logger = logging.getLogger("DigitalMetadataSink")
 
     def setup(self, spec: holoscan.core.OperatorSpec):
-        spec.input("rf_in").connector(holoscan.core.IOSpec.ConnectorType.DOUBLE_BUFFER, capacity=100)
+        spec.input("rf_in")
 
     def initialize(self):
         # make sure the metadata channel directory exists
@@ -114,7 +114,11 @@ class DigitalMetadataSink(holoscan.core.Operator):
         op_output: holoscan.core.OutputContext,
         context: holoscan.core.ExecutionContext,
     ):
-        rf_array = op_input.receive("rf_in")
+        rf_message = op_input.receive("rf_in")
+        for rf_array in rf_message:
+            self.compute_one(rf_array)
+
+    def compute_one(self, rf_array):
         rf_metadata = rf_array.metadata
 
         if self.writer is None:

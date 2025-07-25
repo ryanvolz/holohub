@@ -30,11 +30,7 @@ namespace holoscan::ops {
 // ----- DigitalRFSink ---------------------------------------------------
 template <typename sampleType>
 void DigitalRFSink<sampleType>::setup(OperatorSpec& spec) {
-  // RFArray inputs need a higher capacity in case they are connected to network connector
-  // which can put multiple messages into the buffer
-  spec.input<std::shared_ptr<RFArray<sampleType>>>("rf_in").connector(
-      holoscan::IOSpec::ConnectorType::kDoubleBuffer,
-      holoscan::Arg("capacity", static_cast<uint64_t>(100)));
+  spec.input<RFMessage<sampleType>>("rf_in");
   spec.param<std::string>(channel_dir,
                           "channel_dir",
                           "Channel directory",
@@ -118,91 +114,95 @@ template <typename sampleType>
 void DigitalRFSink<sampleType>::compute(InputContext& op_input, OutputContext& op_output,
                                         ExecutionContext&) {
   HOLOSCAN_LOG_TRACE("DigitalRFSink::compute() called");
-  auto in = op_input.receive<std::shared_ptr<RFArray<sampleType>>>("rf_in").value();
+  auto in_vector = op_input.receive<RFMessage<sampleType>>("rf_in").value();
+  cudaStream_t stream = op_input.receive_cuda_stream("rf_in");
 
-  if (rf_data_arrs[0].Shape() != in->data.Shape()) {
-    HOLOSCAN_LOG_ERROR(
-        "Incoming array shape ({}, {}) does not equal config-specified shape ({}, {})",
-        in->data.Size(0),
-        in->data.Size(1),
-        rf_data_arrs[0].Size(0),
-        rf_data_arrs[0].Size(1));
-  }
-
-  // copy incoming data/metadata to host-allocated memory
-  matx::copy(rf_data_arrs[cur_idx], in->data, in->stream);
-  cudaEventRecord(events_[cur_idx], in->stream);
-  rf_metadatas[cur_idx] = in->metadata;
-  cur_msg_.buffer_idx = cur_idx;
-  cur_msg_.event = events_[cur_idx];
-  copy_q.push(cur_msg_);
-  HOLOSCAN_LOG_DEBUG("Buffer {}: Copying {} samples @ {} from GPU memory",
-                     cur_idx,
-                     rf_data_arrs[cur_idx].Size(0),
-                     rf_metadatas[cur_idx].sample_idx);
-  cur_idx = (++cur_idx % num_concurrent);
-
-  // initialize writer using data specifications from the first array
-  if (!writer_initialized) {
-    start_idx = in->metadata.sample_idx;
-    sample_rate_numerator = in->metadata.sample_rate_numerator;
-    sample_rate_denominator = in->metadata.sample_rate_denominator;
-    HOLOSCAN_LOG_INFO("Initializing Digital RF writer with start_idx {}, sample_rate {}/{}",
-                      start_idx,
-                      sample_rate_numerator,
-                      sample_rate_denominator);
-    drf_writer = digital_rf_create_write_hdf5(channel_dir_path.string().data(),
-                                              hdf5_dtype,
-                                              subdir_cadence_secs.get(),
-                                              file_cadence_millisecs.get(),
-                                              start_idx,
-                                              sample_rate_numerator,
-                                              sample_rate_denominator,
-                                              uuid.get().data(),
-                                              compression_level.get(),
-                                              checksum.get(),
-                                              is_complex,
-                                              num_subchannels.get(),
-                                              is_continuous.get(),
-                                              marching_dots.get());
-    if (!drf_writer) {
+  for (auto in : in_vector) {
+    if (rf_data_arrs[0].Shape() != in->data.Shape()) {
       HOLOSCAN_LOG_ERROR(
-          "Failed to initialize Digital RF writer with start_idx {}, sample_rate {}/{}. Exiting.",
-          start_idx,
-          sample_rate_numerator,
-          sample_rate_denominator);
+          "Incoming array shape ({}, {}) does not equal config-specified shape ({}, {})",
+          in->data.Size(0),
+          in->data.Size(1),
+          rf_data_arrs[0].Size(0),
+          rf_data_arrs[0].Size(1));
     }
-    writer_initialized = true;
-  }
 
-  while (copy_q.size() > 0) {
-    const auto next_msg = copy_q.front();
-    if (copy_q.size() >= num_concurrent) {
-      // copy buffers filled before we could clear any of them and write the array
-      HOLOSCAN_LOG_ERROR("Fell behind in copying arrays from GPU for writing with Digital RF!");
-      // wait until the oldest copy is done and we can write the next array
-      cudaEventSynchronize(next_msg.event);
-    }
-    if (cudaEventQuery(next_msg.event) == cudaSuccess) {
-      HOLOSCAN_LOG_DEBUG("Buffer {}: Writing {} samples @ {}",
-                         next_msg.buffer_idx,
-                         rf_data_arrs[next_msg.buffer_idx].Size(0),
-                         rf_metadatas[next_msg.buffer_idx].sample_idx);
-      auto result = digital_rf_write_hdf5(drf_writer,
-                                          rf_metadatas[next_msg.buffer_idx].sample_idx - start_idx,
-                                          rf_data_arrs[next_msg.buffer_idx].Data(),
-                                          rf_data_arrs[next_msg.buffer_idx].Size(0));
-      if (result) {
-        HOLOSCAN_LOG_ERROR("Digital RF write failed with error {}, sample_idx {}  write_len {}",
-                           result,
-                           rf_metadatas[next_msg.buffer_idx].sample_idx - start_idx,
-                           rf_data_arrs[next_msg.buffer_idx].Size(0));
-        exit(result);
+    // copy incoming data/metadata to host-allocated memory
+    matx::copy(rf_data_arrs[cur_idx], in->data, stream);
+    cudaEventRecord(events_[cur_idx], stream);
+    rf_metadatas[cur_idx] = in->metadata;
+    cur_msg_.buffer_idx = cur_idx;
+    cur_msg_.event = events_[cur_idx];
+    copy_q.push(cur_msg_);
+    HOLOSCAN_LOG_DEBUG("Buffer {}: Copying {} samples @ {} from GPU memory",
+                       cur_idx,
+                       rf_data_arrs[cur_idx].Size(0),
+                       rf_metadatas[cur_idx].sample_idx);
+    cur_idx = (++cur_idx % num_concurrent);
+
+    // initialize writer using data specifications from the first array
+    if (!writer_initialized) {
+      start_idx = in->metadata.sample_idx;
+      sample_rate_numerator = in->metadata.sample_rate_numerator;
+      sample_rate_denominator = in->metadata.sample_rate_denominator;
+      HOLOSCAN_LOG_INFO("Initializing Digital RF writer with start_idx {}, sample_rate {}/{}",
+                        start_idx,
+                        sample_rate_numerator,
+                        sample_rate_denominator);
+      drf_writer = digital_rf_create_write_hdf5(channel_dir_path.string().data(),
+                                                hdf5_dtype,
+                                                subdir_cadence_secs.get(),
+                                                file_cadence_millisecs.get(),
+                                                start_idx,
+                                                sample_rate_numerator,
+                                                sample_rate_denominator,
+                                                uuid.get().data(),
+                                                compression_level.get(),
+                                                checksum.get(),
+                                                is_complex,
+                                                num_subchannels.get(),
+                                                is_continuous.get(),
+                                                marching_dots.get());
+      if (!drf_writer) {
+        HOLOSCAN_LOG_ERROR(
+            "Failed to initialize Digital RF writer with start_idx {}, sample_rate {}/{}. Exiting.",
+            start_idx,
+            sample_rate_numerator,
+            sample_rate_denominator);
       }
+      writer_initialized = true;
+    }
 
-      copy_q.pop();
-    } else {
-      break;
+    while (copy_q.size() > 0) {
+      const auto next_msg = copy_q.front();
+      if (copy_q.size() >= num_concurrent) {
+        // copy buffers filled before we could clear any of them and write the array
+        HOLOSCAN_LOG_ERROR("Fell behind in copying arrays from GPU for writing with Digital RF!");
+        // wait until the oldest copy is done and we can write the next array
+        cudaEventSynchronize(next_msg.event);
+      }
+      if (cudaEventQuery(next_msg.event) == cudaSuccess) {
+        HOLOSCAN_LOG_DEBUG("Buffer {}: Writing {} samples @ {}",
+                           next_msg.buffer_idx,
+                           rf_data_arrs[next_msg.buffer_idx].Size(0),
+                           rf_metadatas[next_msg.buffer_idx].sample_idx);
+        auto result =
+            digital_rf_write_hdf5(drf_writer,
+                                  rf_metadatas[next_msg.buffer_idx].sample_idx - start_idx,
+                                  rf_data_arrs[next_msg.buffer_idx].Data(),
+                                  rf_data_arrs[next_msg.buffer_idx].Size(0));
+        if (result) {
+          HOLOSCAN_LOG_ERROR("Digital RF write failed with error {}, sample_idx {}  write_len {}",
+                             result,
+                             rf_metadatas[next_msg.buffer_idx].sample_idx - start_idx,
+                             rf_data_arrs[next_msg.buffer_idx].Size(0));
+          exit(result);
+        }
+
+        copy_q.pop();
+      } else {
+        break;
+      }
     }
   }
 }

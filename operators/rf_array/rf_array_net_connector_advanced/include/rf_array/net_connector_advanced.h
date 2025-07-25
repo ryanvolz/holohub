@@ -94,7 +94,6 @@ class NetConnectorAdvanced : public Operator {
   BufferTracking buffer_track;
   matx::tensor_t<sample_t, 3> rf_data;
   matx::tensor_t<RFMetadata, 1> rf_metadata;
-  cudaStream_t proc_stream;
 
   // Spoofed packet header device memory structure
   RFPacketHeader* spoof_header_d;

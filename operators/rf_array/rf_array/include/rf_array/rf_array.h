@@ -42,8 +42,10 @@ template <typename sampleType>
 struct RFArray {
   matx::tensor_t<sampleType, 2> data;
   RFMetadata metadata;
-  cudaStream_t stream;
 
-  RFArray(matx::tensor_t<sampleType, 2> _data, RFMetadata _metadata, cudaStream_t _stream)
-      : data{_data}, metadata{_metadata}, stream{_stream} {}
+  RFArray(matx::tensor_t<sampleType, 2> _data, RFMetadata _metadata)
+      : data{_data}, metadata{_metadata} {}
 };
+
+template <typename sampleType>
+using RFMessage = std::vector<std::shared_ptr<RFArray<sampleType>>>;

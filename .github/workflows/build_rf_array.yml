@@ -11,9 +11,8 @@ on:
 
 env:
   BUILD_CUDA_KEYRING: https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/arm64/cuda-keyring_1.1-1_all.deb
-  BUILD_HOLOSCAN_VERSION: 3.4.0.2-1
-  BUILD_HOLOSCAN_HEADER_TAG: v3.4.0
   DOCKER_REGISTRY: ghcr.io
+  HOLOSCAN_VERSION: 3.4.0
   IMAGE_CONTEXT: pkg/holoscan-rf-array
   IMAGE_DOCKERFILE: pkg/holoscan-rf-array/Dockerfile.jetsonorin
   IMAGE_NAME: ${{ github.repository }}/rf-array
@@ -35,12 +34,12 @@ jobs:
           sudo apt-get update
       - name: Install dependencies
         run: |
-          sudo apt-get install -y cuda-toolkit holoscan=${{ env.BUILD_HOLOSCAN_VERSION }} libhdf5-dev
+          sudo apt-get install -y cuda-toolkit holoscan=${{ env.HOLOSCAN_VERSION }}* libhdf5-dev
       - name: Checkout holoscan
         uses: actions/checkout@v4
         with:
           repository: "nvidia-holoscan/holoscan-sdk"
-          ref: ${{ env.BUILD_HOLOSCAN_HEADER_TAG }}
+          ref: v${{ env.HOLOSCAN_VERSION }}
           path: "holoscan-sdk"
       - name: Copy Holoscan python headers
         # workaround for Holoscan deb package not including Python headers
@@ -115,6 +114,7 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           build-args: RELEASE=${{ env.IMAGE_JETPACK_RELEASE }}
             CUDA_VERSION_STRING=${{ env.IMAGE_CUDA_VERSION_STRING }}
+            HOLOSCAN_VERSION=${{ env.HOLOSCAN_VERSION }}
             RF_ARRAY_PACKAGE=${{ env.IMAGE_RF_ARRAY_PACKAGE }}
       - name: Generate artifact attestation
         uses: actions/attest-build-provenance@v2

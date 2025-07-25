@@ -42,7 +42,7 @@ void TypeConversionComplexIntToFloat::initialize() {
 void TypeConversionComplexIntToFloat::compute(InputContext& op_input, OutputContext& op_output,
                                               ExecutionContext&) {
   HOLOSCAN_LOG_TRACE("TypeConversionComplexIntToFloat::compute() called");
-  auto in = op_input.receive<RFMessage<sample_t>>("rf_in").value();
+  auto in_vector = op_input.receive<RFMessage<sample_t>>("rf_in").value();
   cudaStream_t stream = op_input.receive_cuda_stream("rf_in");
 
   RFMessage<complex_t> out_msg;

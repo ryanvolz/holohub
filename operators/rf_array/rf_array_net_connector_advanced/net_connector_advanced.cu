@@ -23,7 +23,9 @@ using namespace holoscan::advanced_network;
 namespace holoscan::ops {
 
 void NetConnectorAdvanced::setup(OperatorSpec& spec) {
-  spec.input<std::shared_ptr<BurstParams>>("burst_in");
+  spec.input<std::shared_ptr<BurstParams>>("burst_in")
+      .connector(holoscan::IOSpec::ConnectorType::kDoubleBuffer,
+                 holoscan::Arg("capacity", static_cast<uint64_t>(10)));
   spec.output<RFMessage<sample_t>>("rf_out");
 
   // Array settings
@@ -286,151 +288,153 @@ void NetConnectorAdvanced::free_bufs_and_queue_arrays(RFMessage<sample_t> out_ms
 void NetConnectorAdvanced::compute(InputContext& op_input, OutputContext& op_output,
                                    ExecutionContext& context) {
   HOLOSCAN_LOG_TRACE("NetConnectorAdvanced::compute() called");
-  // todo Some sort of warm start for the processing stages?
   int64_t ttl_bytes_in_cur_batch_ = 0;
 
   // always emit one message per compute, even if empty vector (RFMessage)
   RFMessage<sample_t> out_msg;
 
-  auto burst_opt = op_input.receive<BurstParams*>("burst_in");
-  if (!burst_opt) {
-    free_bufs_and_queue_arrays(out_msg);
-    op_output.emit(out_msg, "rf_out");
-    return;
-  }
+  auto burst_maybe = op_input.receive<BurstParams*>("burst_in");
+  while (burst_maybe) {
+    auto burst = burst_opt.value();
 
-  auto burst = burst_opt.value();
+    auto burst_size = get_num_packets(burst);
 
-  auto burst_size = get_num_packets(burst);
+    HOLOSCAN_LOG_DEBUG("Handling burst of {} packets with {} packets already in buffer",
+                       burst_size,
+                       aggr_pkts_recv_);
 
-  HOLOSCAN_LOG_DEBUG("Handling burst of {} packets with {} packets already in buffer",
-                     burst_size,
-                     aggr_pkts_recv_);
+    auto burst_pkts_remaining = burst_size;
 
-  auto burst_pkts_remaining = burst_size;
+    while (burst_pkts_remaining > 0) {
+      auto num_pkts_to_copy = std::min(burst_pkts_remaining,
+                                       static_cast<uint32_t>(batch_size_.get() - aggr_pkts_recv_));
 
-  while (burst_pkts_remaining > 0) {
-    auto num_pkts_to_copy =
-        std::min(burst_pkts_remaining, static_cast<uint32_t>(batch_size_.get() - aggr_pkts_recv_));
+      // Track packet payloads for the current burst
+      if (gpu_direct_.get()) {
+        // GPUDirect mode (needs to match if the ANO queue uses one or more memory regions)
+        // Save off the GPU pointers into a host-pinned buffer (h_dev_ptrs_) to reassemble later.
+        if (use_hds_.get()) {
+          // Header-Data-Split: header to CPU, payload to GPU
+          // NOTE: current App assumes only two memory region segments, one for header (CPU),
+          //       and one for payload (GPU).
 
-    // Track packet payloads for the current burst
-    if (gpu_direct_.get()) {
-      // GPUDirect mode (needs to match if the ANO queue uses one or more memory regions)
-      // Save off the GPU pointers into a host-pinned buffer (h_dev_ptrs_) to reassemble later.
-      if (use_hds_.get()) {
-        // Header-Data-Split: header to CPU, payload to GPU
-        // NOTE: current App assumes only two memory region segments, one for header (CPU),
-        //       and one for payload (GPU).
-
-        for (int p = 0; p < num_pkts_to_copy; p++) {
-          // Get pointers to payload data on GPU
-          // NOTE: It's (1) here since the GPU memory region is second in the list for this queue.
-          //       The first region (0) is for headers on CPU, ignored here.
-          // NOTE: currently ordering pointers in the order packets come in. If headers had segment
-          //       ID, the index in h_dev_ptrs_ should use that (instead of aggr_pkts_recv_ + p).
-          h_dev_ptrs_[cur_idx][aggr_pkts_recv_ + p] = get_segment_packet_ptr(burst, 1, p);
-          ttl_bytes_in_cur_batch_ +=
-              get_segment_packet_length(burst, 0, p) + get_segment_packet_length(burst, 1, p);
+          for (int p = 0; p < num_pkts_to_copy; p++) {
+            // Get pointers to payload data on GPU
+            // NOTE: It's (1) here since the GPU memory region is second in the list for this queue.
+            //       The first region (0) is for headers on CPU, ignored here.
+            // NOTE: currently ordering pointers in the order packets come in. If headers had
+            // segment
+            //       ID, the index in h_dev_ptrs_ should use that (instead of aggr_pkts_recv_ + p).
+            h_dev_ptrs_[cur_idx][aggr_pkts_recv_ + p] = get_segment_packet_ptr(burst, 1, p);
+            ttl_bytes_in_cur_batch_ +=
+                get_segment_packet_length(burst, 0, p) + get_segment_packet_length(burst, 1, p);
+          }
+        } else {
+          // Batched: headers and payload to GPU (queue memory regions should be a single GPU
+          // segment)
+          for (int p = 0; p < num_pkts_to_copy; p++) {
+            // Get pointers to payload data on GPU (shifting by IPv4 UDP header size)
+            // NOTE: currently ordering pointers in the order packets come in. If headers had
+            // segment
+            //       ID, the index in h_dev_ptrs_ should use that (instead of aggr_pkts_recv_ + p).
+            h_dev_ptrs_[cur_idx][aggr_pkts_recv_ + p] =
+                reinterpret_cast<uint8_t*>(get_segment_packet_ptr(burst, 0, p)) +
+                sizeof(UDPIPV4Pkt);
+            ttl_bytes_in_cur_batch_ += get_segment_packet_length(burst, 0, p);
+          }
         }
       } else {
-        // Batched: headers and payload to GPU (queue memory regions should be a single GPU segment)
+        /* CPU Mode (needs to match if the ANO queue uses no GPU memory regions)
+         * Copy each packet payload in a continuous host-pinned buffer, copy of that larger buffer
+         * to the GPU will occur later (copying each packet to GPU directly would be too expensive).
+         *
+         * NOTE: this assume huge pages memory regions. With host-pinned memory regions, this could
+         * be skipped, though probably not faster given the higher perf to write to huge pages.
+         */
+
+        auto batch_offset = aggr_pkts_recv_ * max_packet_size_.get();
+
         for (int p = 0; p < num_pkts_to_copy; p++) {
-          // Get pointers to payload data on GPU (shifting by IPv4 UDP header size)
-          // NOTE: currently ordering pointers in the order packets come in. If headers had segment
-          //       ID, the index in h_dev_ptrs_ should use that (instead of aggr_pkts_recv_ + p).
-          h_dev_ptrs_[cur_idx][aggr_pkts_recv_ + p] =
-              reinterpret_cast<uint8_t*>(get_segment_packet_ptr(burst, 0, p)) + sizeof(UDPIPV4Pkt);
-          ttl_bytes_in_cur_batch_ += get_segment_packet_length(burst, 0, p);
+          // Payload address (UDPIPV4Pkt: + 1 skips the header)
+          auto payload_ptr = static_cast<UDPIPV4Pkt*>(get_segment_packet_ptr(burst, 0, p)) + 1;
+          // Payload length (packet length minus header length)
+          auto pkt_len = get_segment_packet_length(burst, 0, p);
+          auto payload_len = pkt_len - sizeof(UDPIPV4Pkt);
+
+          // Copy payload to aggregated CPU buffers now
+          memcpy((char*)full_batch_data_h_[cur_idx] + batch_offset + p * max_packet_size_.get(),
+                 payload_ptr,
+                 payload_len);
+
+          // Count bytes received
+          ttl_bytes_in_cur_batch_ += pkt_len;
+
+          // TODO: could free CPU packets now
         }
       }
-    } else {
-      /* CPU Mode (needs to match if the ANO queue uses no GPU memory regions)
-       * Copy each packet payload in a continuous host-pinned buffer, copy of that larger buffer to
-       * the GPU will occur later (copying each packet to GPU directly would be too expensive).
-       *
-       * NOTE: this assume huge pages memory regions. With host-pinned memory regions, this could be
-       *       skipped, though probably not faster given the higher perf to write to huge pages.
-       */
+      ttl_bytes_recv_ += ttl_bytes_in_cur_batch_;
 
-      auto batch_offset = aggr_pkts_recv_ * max_packet_size_.get();
+      aggr_pkts_recv_ += num_pkts_to_copy;
+      burst_pkts_remaining -= num_pkts_to_copy;
+      // If we're finished with the packet burst, then add it to the current message to be released
+      if (burst_pkts_remaining == 0) { cur_msg_.msg[cur_msg_.num_batches++] = burst; }
 
-      for (int p = 0; p < num_pkts_to_copy; p++) {
-        // Payload address (UDPIPV4Pkt: + 1 skips the header)
-        auto payload_ptr = static_cast<UDPIPV4Pkt*>(get_segment_packet_ptr(burst, 0, p)) + 1;
-        // Payload length (packet length minus header length)
-        auto pkt_len = get_segment_packet_length(burst, 0, p);
-        auto payload_len = pkt_len - sizeof(UDPIPV4Pkt);
+      // Once we've aggregated enough packets, do some work
+      if (aggr_pkts_recv_ >= batch_size_.get()) {
+        HOLOSCAN_LOG_DEBUG(
+            "{} packets collected exceeding batch size of {}, packing into array on GPU",
+            aggr_pkts_recv_,
+            batch_size_.get());
+        do {
+          free_bufs_and_queue_arrays(out_msg);
+          if (out_q.size() >= num_concurrent) {
+            HOLOSCAN_LOG_ERROR("Fell behind in processing on GPU!");
+            cudaStreamSynchronize(streams_[cur_idx]);
+          }
+        } while (out_q.size() >= num_concurrent);
 
-        // Copy payload to aggregated CPU buffers now
-        memcpy((char*)full_batch_data_h_[cur_idx] + batch_offset + p * max_packet_size_.get(),
-               payload_ptr,
-               payload_len);
+        // Copy packet I/Q contents to appropriate location in 'rf_data'
+        place_packet_data(rf_data.Data(),
+                          rf_metadata.Data(),
+                          h_dev_ptrs_[cur_idx],
+                          buffer_track.sample_cnt_d,
+                          buffer_track.received_end_d,
+                          buffer_track.counter_d,
+                          aggr_pkts_recv_,
+                          buffer_size_.get(),
+                          num_samples_.get(),
+                          num_subchannels_.get(),
+                          max_samples_per_packet,
+                          freq_idx_scaling_.get(),
+                          freq_idx_offset_.get(),
+                          apply_conjugate_.get(),
+                          spoof_header_d,
+                          ttl_pkts_recv_,            // only needed if spoofing packets
+                          packet_skip_bytes_.get(),  // only needed if spoofing packets
+                          streams_[cur_idx]);
 
-        // Count bytes received
-        ttl_bytes_in_cur_batch_ += pkt_len;
+        cudaEventRecord(events_[cur_idx], streams_[cur_idx]);
+        cur_msg_.stream = streams_[cur_idx];
+        cur_msg_.evt = events_[cur_idx];
+        out_q.push(cur_msg_);
+        cur_msg_.num_batches = 0;
 
-        // TODO: could free CPU packets now
-      }
-    }
-    ttl_bytes_recv_ += ttl_bytes_in_cur_batch_;
+        ttl_pkts_recv_ += aggr_pkts_recv_;
 
-    aggr_pkts_recv_ += num_pkts_to_copy;
-    burst_pkts_remaining -= num_pkts_to_copy;
-    // If we're finished with the packet burst, then add it to the current message to be released
-    if (burst_pkts_remaining == 0) { cur_msg_.msg[cur_msg_.num_batches++] = burst; }
-
-    // Once we've aggregated enough packets, do some work
-    if (aggr_pkts_recv_ >= batch_size_.get()) {
-      HOLOSCAN_LOG_DEBUG(
-          "{} packets collected exceeding batch size of {}, packing into array on GPU",
-          aggr_pkts_recv_,
-          batch_size_.get());
-      do {
-        free_bufs_and_queue_arrays(out_msg);
-        if (out_q.size() >= num_concurrent) {
-          HOLOSCAN_LOG_ERROR("Fell behind in processing on GPU!");
-          cudaStreamSynchronize(streams_[cur_idx]);
+        if (cudaGetLastError() != cudaSuccess) {
+          HOLOSCAN_LOG_ERROR(
+              "CUDA error dispatching batch from queue number {} after {} total packets received",
+              cur_idx,
+              ttl_pkts_recv_);
+          exit(1);
         }
-      } while (out_q.size() >= num_concurrent);
-
-      // Copy packet I/Q contents to appropriate location in 'rf_data'
-      place_packet_data(rf_data.Data(),
-                        rf_metadata.Data(),
-                        h_dev_ptrs_[cur_idx],
-                        buffer_track.sample_cnt_d,
-                        buffer_track.received_end_d,
-                        buffer_track.counter_d,
-                        aggr_pkts_recv_,
-                        buffer_size_.get(),
-                        num_samples_.get(),
-                        num_subchannels_.get(),
-                        max_samples_per_packet,
-                        freq_idx_scaling_.get(),
-                        freq_idx_offset_.get(),
-                        apply_conjugate_.get(),
-                        spoof_header_d,
-                        ttl_pkts_recv_,            // only needed if spoofing packets
-                        packet_skip_bytes_.get(),  // only needed if spoofing packets
-                        streams_[cur_idx]);
-
-      cudaEventRecord(events_[cur_idx], streams_[cur_idx]);
-      cur_msg_.stream = streams_[cur_idx];
-      cur_msg_.evt = events_[cur_idx];
-      out_q.push(cur_msg_);
-      cur_msg_.num_batches = 0;
-
-      ttl_pkts_recv_ += aggr_pkts_recv_;
-
-      if (cudaGetLastError() != cudaSuccess) {
-        HOLOSCAN_LOG_ERROR(
-            "CUDA error dispatching batch from queue number {} after {} total packets received",
-            cur_idx,
-            ttl_pkts_recv_);
-        exit(1);
+        aggr_pkts_recv_ = 0;
+        cur_idx = (++cur_idx % num_concurrent);
       }
-      aggr_pkts_recv_ = 0;
-      cur_idx = (++cur_idx % num_concurrent);
     }
+
+    // see if we have another burst on the receive buffer
+    burst_maybe = op_input.receive<BurstParams*>("burst_in");
   }
 
   // One final check for completed arrays before emitting and exiting

@@ -21,7 +21,9 @@
 namespace holoscan::ops {
 
 void NetConnectorBasic::setup(OperatorSpec& spec) {
-  spec.input<std::shared_ptr<NetworkOpBurstParams>>("burst_in");
+  spec.input<std::shared_ptr<NetworkOpBurstParams>>("burst_in")
+      .connector(holoscan::IOSpec::ConnectorType::kDoubleBuffer,
+                 holoscan::Arg("capacity", static_cast<uint64_t>(10)));
   spec.output<RFMessage<sample_t>>("rf_out");
 
   // Array settings
@@ -265,102 +267,100 @@ void NetConnectorBasic::check_completed_and_queue_arrays(RFMessage<sample_t> out
 void NetConnectorBasic::compute(InputContext& op_input, OutputContext& op_output,
                                 ExecutionContext& context) {
   HOLOSCAN_LOG_TRACE("NetConnectorBasic::compute() called");
-  // todo Some sort of warm start for the processing stages?
-
   // always emit one message per compute, even if empty vector (RFMessage)
   RFMessage<sample_t> out_msg;
 
-  auto burst_opt = op_input.receive<std::shared_ptr<NetworkOpBurstParams>>("burst_in");
-  if (!burst_opt) {
-    check_completed_and_queue_arrays(out_msg);
-    op_output.emit(out_msg, "rf_out");
-    return;
-  }
+  auto burst_maybe = op_input.receive<std::shared_ptr<NetworkOpBurstParams>>("burst_in");
+  while (burst_maybe) {
+    auto burst = burst_maybe.value();
 
-  auto burst = burst_opt.value();
+    HOLOSCAN_LOG_DEBUG(
+        "Handling burst of {} packets and {} bytes, with {} packets already in buffer",
+        burst->num_pkts,
+        burst->len,
+        aggr_pkts_recv_);
 
-  HOLOSCAN_LOG_DEBUG("Handling burst of {} packets and {} bytes, with {} packets already in buffer",
-                     burst->num_pkts,
-                     burst->len,
-                     aggr_pkts_recv_);
+    // Track packet payloads for the current burst
+    /* CPU Mode
+     * Copy each packet payload in a continuous host-pinned buffer, copy of that larger buffer to
+     * the GPU will occur later (copying each packet to GPU directly would be too expensive).
+     */
 
-  // Track packet payloads for the current burst
-  /* CPU Mode
-   * Copy each packet payload in a continuous host-pinned buffer, copy of that larger buffer to
-   * the GPU will occur later (copying each packet to GPU directly would be too expensive).
-   */
+    auto burst_pkts_remaining = burst->num_pkts;
+    // FIXME: assuming all packets are the same size, see also: filling h_dev_ptrs_ in initialize()
+    auto pkt_size = burst->len / burst->num_pkts;
 
-  auto burst_pkts_remaining = burst->num_pkts;
-  // FIXME: assuming all packets are the same size, see also: filling h_dev_ptrs_ in initialize()
-  auto pkt_size = burst->len / burst->num_pkts;
+    while (burst_pkts_remaining > 0) {
+      auto num_pkts_to_copy = std::min(burst_pkts_remaining,
+                                       static_cast<uint32_t>(batch_size_.get() - aggr_pkts_recv_));
+      auto copy_len = num_pkts_to_copy * pkt_size;
+      auto batch_offset = aggr_pkts_recv_ * pkt_size;
+      memcpy((char*)full_batch_data_h_[cur_idx] + batch_offset, burst->data, copy_len);
 
-  while (burst_pkts_remaining > 0) {
-    auto num_pkts_to_copy =
-        std::min(burst_pkts_remaining, static_cast<uint32_t>(batch_size_.get() - aggr_pkts_recv_));
-    auto copy_len = num_pkts_to_copy * pkt_size;
-    auto batch_offset = aggr_pkts_recv_ * pkt_size;
-    memcpy((char*)full_batch_data_h_[cur_idx] + batch_offset, burst->data, copy_len);
+      ttl_bytes_recv_ += copy_len;
+      aggr_pkts_recv_ += num_pkts_to_copy;
+      burst_pkts_remaining -= num_pkts_to_copy;
 
-    ttl_bytes_recv_ += copy_len;
-    aggr_pkts_recv_ += num_pkts_to_copy;
-    burst_pkts_remaining -= num_pkts_to_copy;
+      // Once we've aggregated enough packets, do some work
+      if (aggr_pkts_recv_ >= batch_size_.get()) {
+        HOLOSCAN_LOG_DEBUG(
+            "{} packets collected exceeding batch size of {}, packing into array on GPU",
+            aggr_pkts_recv_,
+            batch_size_.get());
+        do {
+          check_completed_and_queue_arrays(out_msg);
+          if (out_q.size() >= num_concurrent) {
+            HOLOSCAN_LOG_ERROR("Fell behind in processing on GPU!");
+            cudaStreamSynchronize(streams_[cur_idx]);
+          }
+        } while (out_q.size() >= num_concurrent);
 
-    // Once we've aggregated enough packets, do some work
-    if (aggr_pkts_recv_ >= batch_size_.get()) {
-      HOLOSCAN_LOG_DEBUG(
-          "{} packets collected exceeding batch size of {}, packing into array on GPU",
-          aggr_pkts_recv_,
-          batch_size_.get());
-      do {
-        check_completed_and_queue_arrays(out_msg);
-        if (out_q.size() >= num_concurrent) {
-          HOLOSCAN_LOG_ERROR("Fell behind in processing on GPU!");
-          cudaStreamSynchronize(streams_[cur_idx]);
+        // Copy packet I/Q contents to appropriate location in 'rf_data'
+        place_packet_data(rf_data.Data(),
+                          rf_metadata.Data(),
+                          h_dev_ptrs_[cur_idx],
+                          buffer_track.sample_cnt_d,
+                          buffer_track.received_end_d,
+                          buffer_track.counter_d,
+                          aggr_pkts_recv_,
+                          buffer_size_.get(),
+                          num_samples_.get(),
+                          num_subchannels_.get(),
+                          max_samples_per_packet,
+                          freq_idx_scaling_.get(),
+                          freq_idx_offset_.get(),
+                          apply_conjugate_.get(),
+                          spoof_header_d,
+                          ttl_pkts_recv_,            // only needed if spoofing packets
+                          packet_skip_bytes_.get(),  // only needed if spoofing packets
+                          streams_[cur_idx]);
+
+        cudaEventRecord(events_[cur_idx], streams_[cur_idx]);
+        cur_msg_.stream = streams_[cur_idx];
+        cur_msg_.evt = events_[cur_idx];
+        out_q.push(cur_msg_);
+        cur_msg_.num_batches = 0;
+
+        ttl_pkts_recv_ += aggr_pkts_recv_;
+
+        if (cudaGetLastError() != cudaSuccess) {
+          HOLOSCAN_LOG_ERROR(
+              "CUDA error dispatching batch from queue number {} after {} total packets received",
+              cur_idx,
+              ttl_pkts_recv_);
+          exit(1);
         }
-      } while (out_q.size() >= num_concurrent);
-
-      // Copy packet I/Q contents to appropriate location in 'rf_data'
-      place_packet_data(rf_data.Data(),
-                        rf_metadata.Data(),
-                        h_dev_ptrs_[cur_idx],
-                        buffer_track.sample_cnt_d,
-                        buffer_track.received_end_d,
-                        buffer_track.counter_d,
-                        aggr_pkts_recv_,
-                        buffer_size_.get(),
-                        num_samples_.get(),
-                        num_subchannels_.get(),
-                        max_samples_per_packet,
-                        freq_idx_scaling_.get(),
-                        freq_idx_offset_.get(),
-                        apply_conjugate_.get(),
-                        spoof_header_d,
-                        ttl_pkts_recv_,            // only needed if spoofing packets
-                        packet_skip_bytes_.get(),  // only needed if spoofing packets
-                        streams_[cur_idx]);
-
-      cudaEventRecord(events_[cur_idx], streams_[cur_idx]);
-      cur_msg_.stream = streams_[cur_idx];
-      cur_msg_.evt = events_[cur_idx];
-      out_q.push(cur_msg_);
-      cur_msg_.num_batches = 0;
-
-      ttl_pkts_recv_ += aggr_pkts_recv_;
-
-      if (cudaGetLastError() != cudaSuccess) {
-        HOLOSCAN_LOG_ERROR(
-            "CUDA error dispatching batch from queue number {} after {} total packets received",
-            cur_idx,
-            ttl_pkts_recv_);
-        exit(1);
+        aggr_pkts_recv_ = 0;
+        cur_idx = (++cur_idx % num_concurrent);
       }
-      aggr_pkts_recv_ = 0;
-      cur_idx = (++cur_idx % num_concurrent);
     }
-  }
 
-  // free packets in burst
-  delete[] burst->data;
+    // free packets in burst
+    delete[] burst->data;
+
+    // see if we have another burst on the receive buffer
+    burst_maybe = op_input.receive<std::shared_ptr<NetworkOpBurstParams>>("burst_in");
+  }
 
   // One final check for completed arrays before emitting and exiting
   check_completed_and_queue_arrays(out_msg);

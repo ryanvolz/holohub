@@ -96,14 +96,6 @@ void DigitalRFSink<sampleType>::initialize() {
   channel_dir_path = channel_dir.get();
   std::filesystem::create_directories(channel_dir_path);
 
-  for (int n = 0; n < num_concurrent; n++) {
-    // allocate in host memory so we can access from CPU without device synchronization
-    matx::make_tensor(
-        rf_data_arrs[n], {chunk_size.get(), num_subchannels.get()}, matx::MATX_HOST_MEMORY);
-
-    cudaEventCreate(&events_[n], cudaEventDisableTiming);
-  }
-
   HOLOSCAN_LOG_INFO("DigitalRFSink::initialize() done");
 }
 
@@ -117,92 +109,73 @@ void DigitalRFSink<sampleType>::compute(InputContext& op_input, OutputContext& o
   auto in_vector = op_input.receive<RFMessage<sampleType>>("rf_in").value();
   cudaStream_t stream = op_input.receive_cuda_stream("rf_in");
 
+  RFMessage<sampleType> host_vector;
+  std::vector<cudaEvent_t> data_ready_vector;
+
   for (auto in : in_vector) {
-    if (rf_data_arrs[0].Shape() != in->data.Shape()) {
-      HOLOSCAN_LOG_ERROR(
-          "Incoming array shape ({}, {}) does not equal config-specified shape ({}, {})",
-          in->data.Size(0),
-          in->data.Size(1),
-          rf_data_arrs[0].Size(0),
-          rf_data_arrs[0].Size(1));
-    }
+    HOLOSCAN_LOG_DEBUG(
+        "Copying {} samples @ {} from GPU memory", in->data.Size(0), in->metadata.sample_idx);
 
     // copy incoming data/metadata to host-allocated memory
-    matx::copy(rf_data_arrs[cur_idx], in->data, stream);
-    cudaEventRecord(events_[cur_idx], stream);
-    rf_metadatas[cur_idx] = in->metadata;
-    cur_msg_.buffer_idx = cur_idx;
-    cur_msg_.event = events_[cur_idx];
-    copy_q.push(cur_msg_);
-    HOLOSCAN_LOG_DEBUG("Buffer {}: Copying {} samples @ {} from GPU memory",
-                       cur_idx,
-                       rf_data_arrs[cur_idx].Size(0),
-                       rf_metadatas[cur_idx].sample_idx);
-    cur_idx = (++cur_idx % num_concurrent);
+    auto host_data = matx::make_tensor<sampleType>(in->data.Shape(), matx::MATX_HOST_MEMORY);
+    matx::copy(host_data, in->data, stream);
+    auto host_rf_array = std::make_shared<RFArray<sampleType>>(host_data, in->metadata);
+    host_vector.push_back(host_rf_array);
 
-    // initialize writer using data specifications from the first array
-    if (!writer_initialized) {
-      start_idx = in->metadata.sample_idx;
-      sample_rate_numerator = in->metadata.sample_rate_numerator;
-      sample_rate_denominator = in->metadata.sample_rate_denominator;
-      HOLOSCAN_LOG_INFO("Initializing Digital RF writer with start_idx {}, sample_rate {}/{}",
-                        start_idx,
-                        sample_rate_numerator,
-                        sample_rate_denominator);
-      drf_writer = digital_rf_create_write_hdf5(channel_dir_path.string().data(),
-                                                hdf5_dtype,
-                                                subdir_cadence_secs.get(),
-                                                file_cadence_millisecs.get(),
-                                                start_idx,
-                                                sample_rate_numerator,
-                                                sample_rate_denominator,
-                                                uuid.get().data(),
-                                                compression_level.get(),
-                                                checksum.get(),
-                                                is_complex,
-                                                num_subchannels.get(),
-                                                is_continuous.get(),
-                                                marching_dots.get());
-      if (!drf_writer) {
-        HOLOSCAN_LOG_ERROR(
-            "Failed to initialize Digital RF writer with start_idx {}, sample_rate {}/{}. Exiting.",
-            start_idx,
-            sample_rate_numerator,
-            sample_rate_denominator);
-      }
-      writer_initialized = true;
+    cudaEvent_t event;
+    cudaEventCreate(&event, cudaEventDisableTiming);
+    cudaEventRecord(event, stream);
+    data_ready_vector.push_back(event);
+  }
+
+  // initialize writer using data specifications from the first array
+  if (!writer_initialized) {
+    auto metadata = in_vector.front()->metadata;
+    start_idx = metadata.sample_idx;
+    sample_rate_numerator = metadata.sample_rate_numerator;
+    sample_rate_denominator = metadata.sample_rate_denominator;
+    HOLOSCAN_LOG_INFO("Initializing Digital RF writer with start_idx {}, sample_rate {}/{}",
+                      start_idx,
+                      sample_rate_numerator,
+                      sample_rate_denominator);
+    drf_writer = digital_rf_create_write_hdf5(channel_dir_path.string().data(),
+                                              hdf5_dtype,
+                                              subdir_cadence_secs.get(),
+                                              file_cadence_millisecs.get(),
+                                              start_idx,
+                                              sample_rate_numerator,
+                                              sample_rate_denominator,
+                                              uuid.get().data(),
+                                              compression_level.get(),
+                                              checksum.get(),
+                                              is_complex,
+                                              num_subchannels.get(),
+                                              is_continuous.get(),
+                                              marching_dots.get());
+    if (!drf_writer) {
+      HOLOSCAN_LOG_ERROR(
+          "Failed to initialize Digital RF writer with start_idx {}, sample_rate {}/{}. Exiting.",
+          start_idx,
+          sample_rate_numerator,
+          sample_rate_denominator);
     }
+    writer_initialized = true;
+  }
 
-    while (copy_q.size() > 0) {
-      const auto next_msg = copy_q.front();
-      if (copy_q.size() >= num_concurrent) {
-        // copy buffers filled before we could clear any of them and write the array
-        HOLOSCAN_LOG_ERROR("Fell behind in copying arrays from GPU for writing with Digital RF!");
-        // wait until the oldest copy is done and we can write the next array
-        cudaEventSynchronize(next_msg.event);
-      }
-      if (cudaEventQuery(next_msg.event) == cudaSuccess) {
-        HOLOSCAN_LOG_DEBUG("Buffer {}: Writing {} samples @ {}",
-                           next_msg.buffer_idx,
-                           rf_data_arrs[next_msg.buffer_idx].Size(0),
-                           rf_metadatas[next_msg.buffer_idx].sample_idx);
-        auto result =
-            digital_rf_write_hdf5(drf_writer,
-                                  rf_metadatas[next_msg.buffer_idx].sample_idx - start_idx,
-                                  rf_data_arrs[next_msg.buffer_idx].Data(),
-                                  rf_data_arrs[next_msg.buffer_idx].Size(0));
-        if (result) {
-          HOLOSCAN_LOG_ERROR("Digital RF write failed with error {}, sample_idx {}  write_len {}",
-                             result,
-                             rf_metadatas[next_msg.buffer_idx].sample_idx - start_idx,
-                             rf_data_arrs[next_msg.buffer_idx].Size(0));
-          exit(result);
-        }
+  // wait for each copy to host memory to complete, then write
+  for (size_t i = 0; i < data_ready_vector.size(); ++i) {
+    cudaEventSynchronize(data_ready_vector[i]);
+    auto in = host_vector[i];
 
-        copy_q.pop();
-      } else {
-        break;
-      }
+    HOLOSCAN_LOG_DEBUG("Writing {} samples @ {}", in->data.Size(0), in->metadata.sample_idx);
+    auto result = digital_rf_write_hdf5(
+        drf_writer, in->metadata.sample_idx - start_idx, in->data.Data(), in->data.Size(0));
+    if (result) {
+      HOLOSCAN_LOG_ERROR("Digital RF write failed with error {}, sample_idx {}  write_len {}",
+                         result,
+                         in->metadata.sample_idx - start_idx,
+                         in->data.Size(0));
+      exit(result);
     }
   }
 }

@@ -18,7 +18,54 @@
 #   https://gitlab.com/nvidia/container-images/l4t-jetpack/-/blob/master/Dockerfile.jetpack_6
 #
 
-FROM nvcr.io/nvidia/base/ubuntu:22.04_20240212
+#################################################################
+# Build Stage
+#################################################################
+
+ARG GPU_TYPE=igpu
+ARG HOLOSCAN_VERSION=3.2.0
+ARG HOLOSCAN_BASE_IMAGE=nvcr.io/nvidia/clara-holoscan/holoscan:v${HOLOSCAN_VERSION}-${GPU_TYPE}
+FROM ${HOLOSCAN_BASE_IMAGE} AS build
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+#
+# Configure cmake repo
+#
+ADD --chmod=664 https://apt.kitware.com/keys/kitware-archive-latest.asc /etc/apt/trusted.gpg.d/
+RUN echo "deb https://apt.kitware.com/ubuntu/ $(cat /etc/os-release | grep -Po '^UBUNTU_CODENAME=\K[^ ]*') main" >> /etc/apt/sources.list.d/kitware.list
+
+# workaround for dpkg-shlibdeps needing to locate libcuda.so.1 and assign it to a package for dependency generation
+RUN ln -s /usr/local/cuda/targets/aarch64-linux/lib/stubs/libcuda.so /usr/lib/libcuda.so.1
+
+#
+# Install dependencies
+#
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        cmake=3.26.* \
+        cmake-data=3.26.* \
+        file \
+        libhdf5-dev \
+    && rm /usr/local/bin/cmake /usr/local/bin/cpack \
+    && rm -rf /var/lib/apt/lists/*
+
+#
+# Build holoscan-rf-array
+ARG BUILD_CUDA_ARCHITECTURES=87
+WORKDIR /holohub
+COPY . .
+ENV HOLOHUB_CMAKE_ARGS="-DCMAKE_CUDA_ARCHITECTURES=${BUILD_CUDA_ARCHITECTURES} -DCMAKE_VERBOSE_MAKEFILE=ON -DHOLOHUB_DOWNLOAD_DATASETS=OFF"
+
+RUN ./run build holoscan-rf-array --buildpath build \
+    --configure-args "${HOLOHUB_CMAKE_ARGS}" \
+    --type release \
+    --parallel 4
+
+#################################################################
+# Runtime Image Stage
+#################################################################
+
+FROM nvcr.io/nvidia/base/ubuntu:22.04_20240212 AS run
 
 LABEL org.opencontainers.image.description="Holoscan RF array operators"
 
@@ -45,7 +92,7 @@ RUN echo "deb https://repo.download.nvidia.com/jetson/common ${JETPACK_RELEASE} 
 # Install rf-array dependencies and needed cuda stuff
 # (do this before holoscan because it shouldn't change as often)
 #
-ARG HOLOSCAN_VERSION=3.4.0
+ARG HOLOSCAN_VERSION
 ARG CUDA_VERSION_STRING=12-6
 RUN apt-get update && apt-get install -y --no-install-recommends \
     holoscan=${HOLOSCAN_VERSION}* \
@@ -73,9 +120,9 @@ RUN python3 -m pip install --no-cache-dir holoscan==${HOLOSCAN_VERSION} numpy==1
 # Install holoscan-rf-array
 #
 ARG RF_ARRAY_PACKAGE=holoscan-rf-array_*.deb
-RUN --mount=type=bind,target=/tmp/build-context \
+RUN --mount=type=bind,from=build,target=/tmp/build-stage \
     apt-get update \
-    && dpkg --unpack /tmp/build-context/${RF_ARRAY_PACKAGE} \
+    && dpkg --unpack /tmp/build-stage/holohub/${RF_ARRAY_PACKAGE} \
     && apt-get install -f -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean

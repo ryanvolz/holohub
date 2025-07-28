@@ -1,0 +1,82 @@
+name: Build Holoscan RF array Docker image
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "rf-array-*"
+  pull_request:
+    branches:
+      - "rf_array"
+
+env:
+  DOCKER_REGISTRY: ghcr.io
+  IMAGE_DOCKERFILE: pkg/holoscan-rf-array/Dockerfile.jetsonorin
+  IMAGE_NAME: ${{ github.repository }}/rf-array
+  HOLOSCAN_VERSION: "3.2.0"
+  GPU_TYPE: igpu
+  BUILD_CUDA_ARCHITECTURES: "87"
+  JETPACK_RELEASE: r36.4
+  CUDA_VERSION_STRING: 12-6
+
+jobs:
+  build_docker_image:
+    name: "Build rf-array docker image for Jetson Orin"
+    runs-on: ubuntu-22.04-arm
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+    steps:
+      - name: Log in to the NVIDIA container registry
+        uses: docker/login-action@v3
+        with:
+          registry: nvcr.io
+          username: $oauthtoken
+          password: ${{ secrets.NGC_API_KEY }}
+      - name: Log in to the upload container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.DOCKER_REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}
+          labels: |
+            org.opencontainers.image.description=Holoscan MEP recorder
+          tags: |
+            type=schedule
+            type=ref,event=branch
+            type=ref,event=tag
+            type=ref,event=pr
+            type=match,pattern=rf-array-(.*),group=1
+            type=match,pattern=rf-array-(v\d+.\d+).*,group=1
+            type=match,pattern=rf-array-(v\d+).*,group=1
+      - name: Build and push Docker image
+        id: push
+        uses: docker/build-push-action@v6
+        with:
+          file: ${{ env.IMAGE_DOCKERFILE }}
+          push: true
+          cache-from: type=registry,ref=${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME}}-build-cache
+          cache-to: type=registry,ref=${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME}}-build-cache,compression=zstd
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            HOLOSCAN_VERSION=${{ env.HOLOSCAN_VERSION }}
+            GPU_TYPE=${{ env.GPU_TYPE }}
+            BUILD_CUDA_ARCHITECTURES=${{ env.BUILD_CUDA_ARCHITECTURES }}
+            JETPACK_RELEASE=${{ env.JETPACK_RELEASE }}
+            CUDA_VERSION_STRING=${{ env.CUDA_VERSION_STRING }}
+      - name: Generate artifact attestation
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME}}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true

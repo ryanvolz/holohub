@@ -129,7 +129,7 @@ void DigitalRFSink<sampleType>::compute(InputContext& op_input, OutputContext& o
   }
 
   // initialize writer using data specifications from the first array
-  if (!writer_initialized) {
+  if (!writer_initialized && !in_vector.empty()) {
     auto metadata = in_vector.front()->metadata;
     start_idx = metadata.sample_idx;
     sample_rate_numerator = metadata.sample_rate_numerator;

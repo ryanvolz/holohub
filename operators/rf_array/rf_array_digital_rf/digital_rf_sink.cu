@@ -107,7 +107,7 @@ void DigitalRFSink<sampleType>::compute(InputContext& op_input, OutputContext& o
                                         ExecutionContext&) {
   HOLOSCAN_LOG_TRACE("DigitalRFSink::compute() called");
   auto in_vector = op_input.receive<RFMessage<sampleType>>("rf_in").value();
-  cudaStream_t stream = op_input.receive_cuda_stream("rf_in");
+  cudaStream_t stream = op_input.receive_cuda_stream("rf_in", true, false);
 
   RFMessage<sampleType> host_vector;
   std::vector<cudaEvent_t> data_ready_vector;

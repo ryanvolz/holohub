@@ -35,8 +35,8 @@ class DigitalMetadataSink(holoscan.core.Operator):
     def __init__(
         self,
         fragment,
-        metadata_dir,
         *args,
+        metadata_dir,
         subdir_cadence_secs=3600,
         file_cadence_secs=1,
         uuid=None,

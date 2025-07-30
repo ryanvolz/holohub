@@ -218,7 +218,7 @@ std::vector<NetConnectorBasic::RxMsg> NetConnectorBasic::check_completed() {
   return completed;
 }
 
-void NetConnectorBasic::check_completed_and_queue_arrays(RFMessage<sample_t> out_msg) {
+void NetConnectorBasic::check_completed_and_queue_arrays(RFMessage<sample_t>& out_msg) {
   // We have to wait for the packet placement to finish because we don't know if a buffer is
   // filled until we check the result of the copy
   std::vector<NetConnectorBasic::RxMsg> completed_msgs = check_completed();

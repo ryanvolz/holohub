@@ -48,7 +48,7 @@ class DigitalMetadataSink(holoscan.core.Operator):
 
         **==Named Inputs==**
 
-            rf_in : RFMessage
+            rf_in : list[RFArray]
                 List of RFArray, including metadata.
 
         Parameters

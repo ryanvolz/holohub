@@ -30,8 +30,8 @@ namespace holoscan::ops {
 void ResamplePoly::setup(OperatorSpec& spec) {
   // RFArray inputs need a higher capacity in case they are connected to network connector
   // which can put multiple messages into the buffer
-  spec.input<RFMessage<complex_t>>("rf_in");
-  spec.output<RFMessage<complex_t>>("rf_out");
+  spec.input<std::shared_ptr<std::vector<RFArray<complex_t>>>>("rf_in");
+  spec.output<std::shared_ptr<std::vector<RFArray<complex_t>>>>("rf_out");
   spec.param<uint32_t>(
       chunk_size, "chunk_size", "Chunk size", "Number of samples to operate on in one chunk", {});
   spec.param<uint16_t>(num_subchannels,
@@ -99,77 +99,74 @@ void ResamplePoly::initialize() {
  */
 void ResamplePoly::compute(InputContext& op_input, OutputContext& op_output, ExecutionContext&) {
   HOLOSCAN_LOG_TRACE("ResamplePoly::compute() called");
-  auto in_vector = op_input.receive<RFMessage<complex_t>>("rf_in").value();
+  auto in_msg_ptr =
+      op_input.receive<std::shared_ptr<std::vector<RFArray<complex_t>>>>("rf_in").value();
   cudaStream_t stream = op_input.receive_cuda_stream("rf_in", true, false);
 
-  RFMessage<complex_t> out_msg;
+  auto out_msg_ptr = std::make_shared<std::vector<RFArray<complex_t>>>();
 
-  for (auto in : in_vector) {
-    if (!prior_input) {
-      prior_input = in;
-      return;
+  for (auto in : (*in_msg_ptr)) {
+    if (prior_input) {
+      // We need data from 3 separate chunks to compute one chunk of output and not shift the
+      // metadata So for incoming chunk N to output the resampling of chunk N-1, we need: [ Last
+      // pad_size samples of chunk N-2, all of chunk N-1, first pad_size samples of chunk N]
+
+      // operating on subchannels separately, so permute them to the front
+      auto padded_data_flipped = padded_data.Permute({1, 0});
+
+      // copy last samples of chunk N-2 to the beginning of the padded tensor
+      auto padded_beginning = padded_data_flipped.Slice({0, 0}, {matx::matxEnd, pad_size});
+      auto end_of_prior_prior = padded_data_flipped.Slice(
+          {0, chunk_size.get()}, {matx::matxEnd, pad_size + chunk_size.get()});
+      matx::copy(padded_beginning, end_of_prior_prior, stream);
+
+      // copy prior input to middle of padded tensor
+      auto padded_middle =
+          padded_data_flipped.Slice({0, pad_size}, {matx::matxEnd, pad_size + chunk_size.get()});
+      auto prior_flipped = prior_input->data.Permute({1, 0});
+      matx::copy(padded_middle, prior_flipped, stream);
+
+      // copy first samples of incoming chunk to end of the padded tensor
+      auto padded_end = padded_data_flipped.Slice({0, pad_size + chunk_size.get()},
+                                                  {matx::matxEnd, 2 * pad_size + chunk_size.get()});
+      auto incoming_flipped_beginning =
+          in.data.Permute({1, 0}).Slice({0, 0}, {matx::matxEnd, pad_size});
+      matx::copy(padded_end, incoming_flipped_beginning, stream);
+
+      // do the polyphase resampling
+      auto padded_out_data_flipped = padded_out_data.Permute({1, 0});
+      (padded_out_data_flipped =
+           matx::resample_poly(padded_data_flipped, filter, up.get(), down.get()))
+          .run(stream);
+
+      // get output view
+      auto out_data_view =
+          padded_out_data.Slice({out_pad_size, 0}, {out_pad_size + out_chunk_size, matx::matxEnd});
+      // copy output to new tensor so we don't have to worry about how long the data needs
+      // to live for downstream blocks to do their processing
+      auto out_data = matx::make_tensor<complex_t>(
+          out_data_view.Shape(), matx::MATX_ASYNC_DEVICE_MEMORY, stream);
+      matx::copy(out_data, out_data_view, stream);
+
+      // create output metadata and adjust its sample index and rate according to the resampling
+      auto out_metadata = prior_input->metadata;
+      out_metadata.sample_idx *= up.get();
+      out_metadata.sample_idx /= down.get();
+      out_metadata.sample_rate_numerator *= up.get();
+      out_metadata.sample_rate_denominator *= down.get();
+      auto divisor =
+          std::gcd(out_metadata.sample_rate_numerator, out_metadata.sample_rate_denominator);
+      out_metadata.sample_rate_numerator /= divisor;
+      out_metadata.sample_rate_denominator /= divisor;
+
+      out_msg_ptr->emplace_back(out_data, out_metadata);
     }
 
-    // We need data from 3 separate chunks to compute one chunk of output and not shift the metadata
-    // So for incoming chunk N to output the resampling of chunk N-1, we need:
-    // [ Last pad_size samples of chunk N-2, all of chunk N-1, first pad_size samples of chunk N]
-
-    // operating on subchannels separately, so permute them to the front
-    auto padded_data_flipped = padded_data.Permute({1, 0});
-
-    // copy last samples of chunk N-2 to the beginning of the padded tensor
-    auto padded_beginning = padded_data_flipped.Slice({0, 0}, {matx::matxEnd, pad_size});
-    auto end_of_prior_prior = padded_data_flipped.Slice(
-        {0, chunk_size.get()}, {matx::matxEnd, pad_size + chunk_size.get()});
-    matx::copy(padded_beginning, end_of_prior_prior, stream);
-
-    // copy prior input to middle of padded tensor
-    auto padded_middle =
-        padded_data_flipped.Slice({0, pad_size}, {matx::matxEnd, pad_size + chunk_size.get()});
-    auto prior_flipped = prior_input->data.Permute({1, 0});
-    matx::copy(padded_middle, prior_flipped, stream);
-
-    // copy first samples of incoming chunk to end of the padded tensor
-    auto padded_end = padded_data_flipped.Slice({0, pad_size + chunk_size.get()},
-                                                {matx::matxEnd, 2 * pad_size + chunk_size.get()});
-    auto incoming_flipped_beginning =
-        in->data.Permute({1, 0}).Slice({0, 0}, {matx::matxEnd, pad_size});
-    matx::copy(padded_end, incoming_flipped_beginning, stream);
-
-    // do the polyphase resampling
-    auto padded_out_data_flipped = padded_out_data.Permute({1, 0});
-    (padded_out_data_flipped =
-         matx::resample_poly(padded_data_flipped, filter, up.get(), down.get()))
-        .run(stream);
-
-    // get output view
-    auto out_data_view =
-        padded_out_data.Slice({out_pad_size, 0}, {out_pad_size + out_chunk_size, matx::matxEnd});
-    // copy output to new tensor so we don't have to worry about how long the data needs
-    // to live for downstream blocks to do their processing
-    auto out_data =
-        matx::make_tensor<complex_t>(out_data_view.Shape(), matx::MATX_ASYNC_DEVICE_MEMORY, stream);
-    matx::copy(out_data, out_data_view, stream);
-
-    // create output metadata and adjust its sample index and rate according to the resampling
-    auto out_metadata = prior_input->metadata;
-    out_metadata.sample_idx *= up.get();
-    out_metadata.sample_idx /= down.get();
-    out_metadata.sample_rate_numerator *= up.get();
-    out_metadata.sample_rate_denominator *= down.get();
-    auto divisor =
-        std::gcd(out_metadata.sample_rate_numerator, out_metadata.sample_rate_denominator);
-    out_metadata.sample_rate_numerator /= divisor;
-    out_metadata.sample_rate_denominator /= divisor;
-
-    auto params = std::make_shared<RFArray<complex_t>>(out_data, out_metadata);
-    out_msg.push_back(params);
-
-    // set incoming input to prior input for next compute
+    // set incoming input to prior input for next chunk
     prior_input = in;
   }
 
-  op_output.emit(out_msg, "rf_out");
+  op_output.emit(out_msg_ptr, "rf_out");
 }
 
 }  // namespace holoscan::ops

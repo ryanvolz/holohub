@@ -24,8 +24,8 @@ namespace holoscan::ops {
 
 // ----- RotatorScheduled ---------------------------------------------------
 void RotatorScheduled::setup(OperatorSpec& spec) {
-  spec.input<RFMessage<complex_t>>("rf_in");
-  spec.output<RFMessage<complex_t>>("rf_out");
+  spec.input<std::shared_ptr<std::vector<RFArray<complex_t>>>>("rf_in");
+  spec.output<std::shared_ptr<std::vector<RFArray<complex_t>>>>("rf_out");
   spec.param<double>(cycle_duration_secs,
                      "cycle_duration_secs",
                      "Cycle duration in seconds",
@@ -81,22 +81,23 @@ void RotatorScheduled::initialize() {
 void RotatorScheduled::compute(InputContext& op_input, OutputContext& op_output,
                                ExecutionContext&) {
   HOLOSCAN_LOG_TRACE("RotatorScheduled::compute() called");
-  auto in_vector = op_input.receive<RFMessage<complex_t>>("rf_in").value();
+  auto in_msg_ptr =
+      op_input.receive<std::shared_ptr<std::vector<RFArray<complex_t>>>>("rf_in").value();
   cudaStream_t stream = op_input.receive_cuda_stream("rf_in", true, false);
 
-  RFMessage<complex_t> out_msg;
+  auto out_msg_ptr = std::make_shared<std::vector<RFArray<complex_t>>>();
 
-  for (auto in : in_vector) {
+  for (auto in : (*in_msg_ptr)) {
     // calculate center frequency and timestamp of the data chunk from metadata
-    double center_freq = in->metadata.center_freq;
-    double sample_rate = static_cast<double>(in->metadata.sample_rate_numerator) /
-                         static_cast<double>(in->metadata.sample_rate_denominator);
+    double center_freq = in.metadata.center_freq;
+    double sample_rate = static_cast<double>(in.metadata.sample_rate_numerator) /
+                         static_cast<double>(in.metadata.sample_rate_denominator);
     uint64_t sample_sec;
     uint64_t picosecond;
     // copied from digital_rf, until function is exported
-    //   digital_rf_get_timestamp_floor(in->metadata.sample_idx,
-    //                                  in->metadata.sample_rate_numerator,
-    //                                  in->metadata.sample_rate_denominator,
+    //   digital_rf_get_timestamp_floor(in.metadata.sample_idx,
+    //                                  in.metadata.sample_rate_numerator,
+    //                                  in.metadata.sample_rate_denominator,
     //                                  &sample_sec,
     //                                  &picosecond);
     // calculate with divide/modulus split to avoid overflow
@@ -104,19 +105,19 @@ void RotatorScheduled::compute(InputContext& op_input, OutputContext& op_output,
     uint64_t tmp_div;
     uint64_t tmp_mod;
     uint64_t tmp;
-    tmp_div = in->metadata.sample_idx / in->metadata.sample_rate_numerator;
-    tmp_mod = in->metadata.sample_idx % in->metadata.sample_rate_numerator;
-    sample_sec = tmp_div * in->metadata.sample_rate_denominator;
-    tmp = tmp_mod * in->metadata.sample_rate_denominator;
-    tmp_div = tmp / in->metadata.sample_rate_numerator;
-    tmp_mod = tmp % in->metadata.sample_rate_numerator;
+    tmp_div = in.metadata.sample_idx / in.metadata.sample_rate_numerator;
+    tmp_mod = in.metadata.sample_idx % in.metadata.sample_rate_numerator;
+    sample_sec = tmp_div * in.metadata.sample_rate_denominator;
+    tmp = tmp_mod * in.metadata.sample_rate_denominator;
+    tmp_div = tmp / in.metadata.sample_rate_numerator;
+    tmp_mod = tmp % in.metadata.sample_rate_numerator;
     sample_sec += tmp_div;
     // picoseconds calculated from remainder of division to calculate seconds
     // picsecond = rem * 1e12 / n = rem * (1e12 / n) + (rem * (1e12 % n)) / n
     tmp = tmp_mod;
-    tmp_div = 1000000000000 / in->metadata.sample_rate_numerator;
-    tmp_mod = 1000000000000 % in->metadata.sample_rate_numerator;
-    picosecond = (tmp * tmp_div) + (tmp * tmp_mod / in->metadata.sample_rate_numerator);
+    tmp_div = 1000000000000 / in.metadata.sample_rate_numerator;
+    tmp_mod = 1000000000000 % in.metadata.sample_rate_numerator;
+    picosecond = (tmp * tmp_div) + (tmp * tmp_mod / in.metadata.sample_rate_numerator);
 
     double timestamp = sample_sec + picosecond / 1e12;
 
@@ -167,28 +168,27 @@ void RotatorScheduled::compute(InputContext& op_input, OutputContext& op_output,
       double phase = 2 * M_PI * aliased_freq_shift * (cycle_timestamp - step_start);
 
       // do the rotation
-      auto in_data_flipped = in->data.Permute({1, 0});
+      auto in_data_flipped = in.data.Permute({1, 0});
       auto phase_range = matx::range<0>({in_data_flipped.Size(1)}, phase, phase_increment);
       // want expj to operate on double for accuracy, but then cast to float (complex_t)
       // for compatibility with input data
       auto rotator = matx::as_type<complex_t>(matx::expj(phase_range));
 
       auto out_data =
-          matx::make_tensor<complex_t>(in->data.Shape(), matx::MATX_ASYNC_DEVICE_MEMORY, stream);
+          matx::make_tensor<complex_t>(in.data.Shape(), matx::MATX_ASYNC_DEVICE_MEMORY, stream);
       auto out_data_flipped = out_data.Permute({1, 0});
 
       (out_data_flipped = in_data_flipped * rotator).run(stream);
 
-      auto out_metadata = in->metadata;
+      auto out_metadata = in.metadata;
       out_metadata.center_freq = step_freq;
 
-      auto params = std::make_shared<RFArray<complex_t>>(out_data, out_metadata);
-      out_msg.push_back(params);
+      out_msg_ptr->emplace_back(out_data, out_metadata);
     } else {
-      out_msg.push_back(in);
+      out_msg_ptr->emplace_back(in.data, in.metadata);
     }
   }
-  op_output.emit(out_msg, "rf_out");
+  op_output.emit(out_msg_ptr, "rf_out");
 }
 
 }  // namespace holoscan::ops

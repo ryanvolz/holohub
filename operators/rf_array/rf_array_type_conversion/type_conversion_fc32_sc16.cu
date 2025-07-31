@@ -25,8 +25,8 @@ namespace holoscan::ops {
 
 // ----- TypeConversionComplexFloatToInt ---------------------------------------------------
 void TypeConversionComplexFloatToInt::setup(OperatorSpec& spec) {
-  spec.input<RFMessage<complex_t>>("rf_in");
-  spec.output<RFMessage<sample_t>>("rf_out");
+  spec.input<std::shared_ptr<std::vector<RFArray<complex_t>>>>("rf_in");
+  spec.output<std::shared_ptr<std::vector<RFArray<sample_t>>>>("rf_out");
 }
 
 void TypeConversionComplexFloatToInt::initialize() {
@@ -42,22 +42,23 @@ void TypeConversionComplexFloatToInt::initialize() {
 void TypeConversionComplexFloatToInt::compute(InputContext& op_input, OutputContext& op_output,
                                               ExecutionContext&) {
   HOLOSCAN_LOG_TRACE("TypeConversionComplexFloatToInt::compute() called");
-  auto in_vector = op_input.receive<RFMessage<complex_t>>("rf_in").value();
+  auto in_msg_ptr =
+      op_input.receive<std::shared_ptr<std::vector<RFArray<complex_t>>>>("rf_in").value();
   cudaStream_t stream = op_input.receive_cuda_stream("rf_in", true, false);
 
-  RFMessage<sample_t> out_msg;
+  auto out_msg_ptr = std::make_shared<std::vector<RFArray<sample_t>>>();
 
-  for (auto in : in_vector) {
-    HOLOSCAN_LOG_TRACE("Dim: {}, {}", in->data.Size(0), in->data.Size(1));
+  for (auto in : (*in_msg_ptr)) {
+    HOLOSCAN_LOG_TRACE("Dim: {}, {}", in.data.Size(0), in.data.Size(1));
 
     // convert the data from complex float to complex int
-    auto float_shp = in->data.Shape();
+    auto float_shp = in.data.Shape();
     float_shp[1] = 2 * float_shp[1];
-    auto in_data_float_view = in->data.View<float_t, 2, typeof(float_shp)>(std::move(float_shp));
+    auto in_data_float_view = in.data.View<float_t, 2, typeof(float_shp)>(std::move(float_shp));
 
     auto complex_int_data =
-        matx::make_tensor<sample_t>(in->data.Shape(), matx::MATX_ASYNC_DEVICE_MEMORY, stream);
-    auto real_shp = in->data.Shape();
+        matx::make_tensor<sample_t>(in.data.Shape(), matx::MATX_ASYNC_DEVICE_MEMORY, stream);
+    auto real_shp = in.data.Shape();
     real_shp[1] = 2 * real_shp[1];
     auto out_data_int_view =
         complex_int_data.View<real_t, 2, typeof(real_shp)>(std::move(real_shp));
@@ -66,10 +67,9 @@ void TypeConversionComplexFloatToInt::compute(InputContext& op_input, OutputCont
          matx::as_int16(in_data_float_view * (std::numeric_limits<real_t>::max() - 1)))
         .run(stream);
 
-    auto params = std::make_shared<RFArray<sample_t>>(complex_int_data, in->metadata);
-    out_msg.push_back(params);
+    out_msg_ptr->emplace_back(complex_int_data, in.metadata);
   }
-  op_output.emit(out_msg, "rf_out");
+  op_output.emit(out_msg_ptr, "rf_out");
 }
 
 }  // namespace holoscan::ops

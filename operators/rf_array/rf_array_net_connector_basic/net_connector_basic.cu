@@ -218,7 +218,8 @@ std::vector<NetConnectorBasic::RxMsg> NetConnectorBasic::check_completed() {
   return completed;
 }
 
-void NetConnectorBasic::check_completed_and_queue_arrays(std::vector<RFArray<sample_t>>& out_msg) {
+void NetConnectorBasic::check_completed_and_queue_arrays(std::vector<RFArray<sample_t>>& out_msg,
+                                                         cudaStream_t& op_stream) {
   // We have to wait for the packet placement to finish because we don't know if a buffer is
   // filled until we check the result of the copy
   std::vector<NetConnectorBasic::RxMsg> completed_msgs = check_completed();
@@ -234,15 +235,20 @@ void NetConnectorBasic::check_completed_and_queue_arrays(std::vector<RFArray<sam
     if (!buffer_track.received_end_h[pos_wrap]) { continue; }
 
     // Received End-of-Array (EOA) message, add to output vector
+    auto out_data_slice = rf_data.Slice<2>({static_cast<matx::index_t>(pos_wrap), 0, 0},
+                                           {matx::matxDropDim, matx::matxEnd, matx::matxEnd});
+    auto out_data = matx::make_tensor<sample_t>(
+        out_data_slice.Shape(), matx::MATX_ASYNC_DEVICE_MEMORY, op_stream);
+    matx::copy(out_data, out_data_slice, op_stream);
     auto out_metadata_tensor = matx::make_tensor<RFMetadata>({}, matx::MATX_HOST_MEMORY);
     matx::copy(out_metadata_tensor,
                rf_metadata.Slice<0>({static_cast<matx::index_t>(pos_wrap)}, {matx::matxDropDim}),
                stream);
+    // operator() on metadata tensor runs immediately on host, so need copy to host memory to
+    // complete
     cudaStreamSynchronize(stream);
     auto out_metadata = out_metadata_tensor();
-    out_msg.emplace_back(rf_data.Slice<2>({static_cast<matx::index_t>(pos_wrap), 0, 0},
-                                          {matx::matxDropDim, matx::matxEnd, matx::matxEnd}),
-                         out_metadata);
+    out_msg.emplace_back(out_data, out_metadata);
 
     HOLOSCAN_LOG_DEBUG(
         "Emitting sample buffer {} with {} IQ samples from internal staging buffer {} into message "
@@ -271,6 +277,7 @@ void NetConnectorBasic::compute(InputContext& op_input, OutputContext& op_output
   auto out_msg_ptr = std::make_shared<std::vector<RFArray<sample_t>>>();
 
   auto burst_maybe = op_input.receive<std::shared_ptr<NetworkOpBurstParams>>("burst_in");
+  cudaStream_t op_stream = op_input.receive_cuda_stream("burst_in", true, false);
   while (burst_maybe) {
     auto burst = burst_maybe.value();
 
@@ -308,7 +315,7 @@ void NetConnectorBasic::compute(InputContext& op_input, OutputContext& op_output
             aggr_pkts_recv_,
             batch_size_.get());
         do {
-          check_completed_and_queue_arrays(*out_msg_ptr);
+          check_completed_and_queue_arrays(*out_msg_ptr, op_stream);
           if (out_q.size() >= num_concurrent) {
             HOLOSCAN_LOG_ERROR("Fell behind in processing on GPU!");
             cudaStreamSynchronize(streams_[cur_idx]);
@@ -363,7 +370,7 @@ void NetConnectorBasic::compute(InputContext& op_input, OutputContext& op_output
   }
 
   // One final check for completed arrays before emitting and exiting
-  check_completed_and_queue_arrays(*out_msg_ptr);
+  check_completed_and_queue_arrays(*out_msg_ptr, op_stream);
   op_output.emit(out_msg_ptr, "rf_out");
 }
 

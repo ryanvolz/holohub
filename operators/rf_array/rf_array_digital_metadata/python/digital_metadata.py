@@ -82,7 +82,7 @@ class DigitalMetadataSink(holoscan.core.Operator):
             self.static_metadata = metadata
 
         super().__init__(fragment, *args, **kwargs)
-        self.logger = logging.getLogger("DigitalMetadataSink")
+        self.logger = logging.getLogger("holoscan.rf_array.DigitalMetadataSink")
 
     def setup(self, spec: holoscan.core.OperatorSpec):
         spec.input("rf_in")

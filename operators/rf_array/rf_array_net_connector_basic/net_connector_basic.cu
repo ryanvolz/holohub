@@ -244,11 +244,13 @@ void NetConnectorBasic::check_completed_and_queue_arrays(std::vector<RFArray<sam
                                           {matx::matxDropDim, matx::matxEnd, matx::matxEnd}),
                          out_metadata);
 
-    HOLOSCAN_LOG_DEBUG("Buffer {}: Emitting sample buffer {} with {}/{} IQ samples",
-                       buffer_track.pos + i,
-                       buffer_track.counter_h[pos_wrap],
-                       buffer_track.sample_cnt_h[pos_wrap],
-                       samples_per_arr);
+    HOLOSCAN_LOG_DEBUG(
+        "Emitting sample buffer {} with {} IQ samples from internal staging buffer {} into message "
+        "queue position {}",
+        buffer_track.counter_h[pos_wrap],
+        buffer_track.sample_cnt_h[pos_wrap],
+        pos_wrap,
+        out_msg.size() - 1);
 
     // Increment the tracker 'i' number of times. This allows us to not get hung on arrays
     // where the EOA was either dropped or missed. Ex: if the EOA for array 11 was dropped,

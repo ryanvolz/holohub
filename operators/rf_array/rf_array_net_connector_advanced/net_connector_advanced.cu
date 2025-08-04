@@ -23,9 +23,11 @@ using namespace holoscan::advanced_network;
 namespace holoscan::ops {
 
 void NetConnectorAdvanced::setup(OperatorSpec& spec) {
-  spec.input<std::shared_ptr<BurstParams>>("burst_in")
-      .connector(holoscan::IOSpec::ConnectorType::kDoubleBuffer,
-                 holoscan::Arg("capacity", static_cast<uint64_t>(10)));
+  // We'd want to set the receiver connector capacity to match the batch_capacity parameter,
+  // but there's no good way to do that other than to do when creating the operator within
+  // an application. So when you use create NetConnectorBasic, add a DoubleBufferReceiver
+  // resource with capacity set to the value of the batch_capacity parameter.
+  spec.input<std::shared_ptr<BurstParams>>("burst_in");
   spec.output<std::shared_ptr<std::vector<RFArray<sample_t>>>>("rf_out");
 
   // Array settings
@@ -100,6 +102,11 @@ void NetConnectorAdvanced::setup(OperatorSpec& spec) {
                        "Max packet size",
                        "Maximum packet size expected from sender",
                        9000);
+  spec.param<uint16_t>(batch_capacity_,
+                       "batch_capacity",
+                       "Batch capacity",
+                       "Input buffer capacity in number of network packet batches",
+                       4);
 }
 
 void NetConnectorAdvanced::initialize() {
@@ -156,8 +163,15 @@ void NetConnectorAdvanced::initialize() {
     cudaFreeHost(spoof_header_h);
   }
 
+  // Set vector sizes based on batch_capacity parameter
+  h_dev_ptrs_.resize(batch_capacity_.get());
+  full_batch_data_h_.resize(batch_capacity_.get());
+  ttl_pkts_drop_.resize(batch_capacity_.get());
+  streams_.resize(batch_capacity_.get());
+  events_.resize(batch_capacity_.get());
+
   // Allocate memory and create CUDA streams for each concurrent batch
-  for (int n = 0; n < num_concurrent; n++) {
+  for (int n = 0; n < batch_capacity_.get(); n++) {
     cudaMallocHost((void**)&h_dev_ptrs_[n], sizeof(void*) * batch_size_.get());
     if (cudaSuccess != cuda_error) {
       throw std::runtime_error("Could not allocate cuda memory for h_dev_ptrs_");
@@ -205,7 +219,7 @@ void NetConnectorAdvanced::initialize() {
 
 void NetConnectorAdvanced::freeResources() {
   HOLOSCAN_LOG_INFO("NetConnectorAdvanced::freeResources() start");
-  for (int n = 0; n < num_concurrent; n++) {
+  for (int n = 0; n < batch_capacity_.get(); n++) {
     if (full_batch_data_h_[n]) { cudaFreeHost(full_batch_data_h_[n]); }
     if (h_dev_ptrs_[n]) { cudaFreeHost(h_dev_ptrs_[n]); }
     if (streams_[n]) { cudaStreamDestroy(streams_[n]); }
@@ -394,11 +408,11 @@ void NetConnectorAdvanced::compute(InputContext& op_input, OutputContext& op_out
             batch_size_.get());
         do {
           free_bufs_and_queue_arrays(*out_msg_ptr, op_stream);
-          if (out_q.size() >= num_concurrent) {
+          if (out_q.size() >= batch_capacity_.get()) {
             HOLOSCAN_LOG_ERROR("Fell behind in processing on GPU!");
             cudaStreamSynchronize(streams_[cur_idx]);
           }
-        } while (out_q.size() >= num_concurrent);
+        } while (out_q.size() >= batch_capacity_.get());
 
         // Copy packet I/Q contents to appropriate location in 'rf_data'
         place_packet_data(rf_data.Data(),
@@ -436,7 +450,7 @@ void NetConnectorAdvanced::compute(InputContext& op_input, OutputContext& op_out
           exit(1);
         }
         aggr_pkts_recv_ = 0;
-        cur_idx = (++cur_idx % num_concurrent);
+        cur_idx = (++cur_idx % batch_capacity_.get());
       }
     }
 

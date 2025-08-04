@@ -69,6 +69,8 @@ batch_size : int, optional
     Batch size in packets for each processing epoch.
 max_packet_size : int, optional
     Maximum packet size (not including network protocol headers) expected from sender.
+batch_capacity: int, optional
+    Input buffer capacity in number of network packet batches.
 gpu_direct : bool, optional
     Whether GPUDirect is enabled for the advanced network operator.
 use_header_data_split : bool, optional

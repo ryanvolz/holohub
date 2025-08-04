@@ -78,6 +78,8 @@ class NetConnectorAdvancedParams:
     """Batch size in packets for each processing epoch"""
     max_packet_size: PositiveInt = 8256
     """Maximum packet size (not including network protocol headers) expected from sender"""
+    batch_capacity: PositiveInt = 4
+    """Input buffer capacity in number of network packet batches"""
     gpu_direct: bool = True
     """Whether GPUDirect is enabled for the advanced network operator"""
     use_header_data_split: bool = True

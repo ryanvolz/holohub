@@ -50,7 +50,7 @@ class PyNetConnectorBasic : public NetConnectorBasic {
                       bool spoof_header = false, uint16_t packet_skip_bytes = 0,
                       std::optional<std::map<std::string, uint64_t>> header_metadata = std::nullopt,
                       uint32_t batch_size = 1000, uint16_t max_packet_size = 9000,
-                      const std::string& name = "net_connector_basic")
+                      uint16_t batch_capacity = 4, const std::string& name = "net_connector_basic")
       : NetConnectorBasic(ArgList{
             Arg{"buffer_size", buffer_size},
             Arg{"num_samples", num_samples},
@@ -62,6 +62,7 @@ class PyNetConnectorBasic : public NetConnectorBasic {
             Arg{"packet_skip_bytes", packet_skip_bytes},
             Arg{"batch_size", batch_size},
             Arg{"max_packet_size", max_packet_size},
+            Arg{"batch_capacity", batch_capacity},
         }) {
     if (header_metadata.has_value()) {
       this->add_arg(Arg{"header_metadata", header_metadata.value()});
@@ -90,6 +91,7 @@ void bind_rf_array_net_connector_basic(py::module& m) {
                     std::optional<std::map<std::string, uint64_t>>,
                     uint32_t,
                     uint16_t,
+                    uint16_t,
                     const std::string&>(),
            "fragment"_a,
            "buffer_size"_a,
@@ -103,6 +105,7 @@ void bind_rf_array_net_connector_basic(py::module& m) {
            "header_metadata"_a = py::none(),
            "batch_size"_a = 1000,
            "max_packet_size"_a = 9000,
+           "batch_capacity"_a = 4,
            "name"_a = "net_connector_basic"s,
            doc::NetConnectorBasic::doc_NetConnectorBasic_python);
 }

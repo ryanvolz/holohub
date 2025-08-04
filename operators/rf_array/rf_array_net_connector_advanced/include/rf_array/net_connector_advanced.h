@@ -39,7 +39,6 @@ class NetConnectorAdvanced : public Operator {
   void stop() override;
 
  private:
-  static constexpr int num_concurrent = 4;    // Number of concurrent batches processing
   static constexpr int MAX_ANO_BATCHES = 10;  // Batches from ANO for one app batch
 
   // Array settings
@@ -75,13 +74,13 @@ class NetConnectorAdvanced : public Operator {
   std::queue<RxMsg> out_q;
 
   // Buffer memory and tracking
-  std::array<void**, num_concurrent> h_dev_ptrs_;         // Host-pinned list of device pointers
-  std::array<void*, num_concurrent> full_batch_data_h_;   // Host aggregated batch
-  std::array<uint64_t**, num_concurrent> ttl_pkts_drop_;  // Total packets dropped by kernel
+  std::vector<void**> h_dev_ptrs_;         // Host-pinned list of device pointers
+  std::vector<void*> full_batch_data_h_;   // Host aggregated batch
+  std::vector<uint64_t**> ttl_pkts_drop_;  // Total packets dropped by kernel
 
   // Concurrent batch structures
-  std::array<cudaStream_t, num_concurrent> streams_;
-  std::array<cudaEvent_t, num_concurrent> events_;
+  std::vector<cudaStream_t> streams_;
+  std::vector<cudaEvent_t> events_;
   int cur_idx = 0;
 
   // Holds burst buffers that cannot be freed yet

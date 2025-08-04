@@ -39,8 +39,6 @@ class NetConnectorBasic : public Operator {
   void stop() override;
 
  private:
-  static constexpr int num_concurrent = 4;  // Number of concurrent batches processing
-
   // Array settings
   Parameter<uint16_t> buffer_size_;
   Parameter<uint32_t> num_samples_;
@@ -56,6 +54,7 @@ class NetConnectorBasic : public Operator {
 
   // Networking settings
   Parameter<uint32_t> batch_size_;       // Batch size for one processing block
+  Parameter<uint16_t> batch_capacity_;
   Parameter<uint16_t> max_packet_size_;  // Maximum size of a single packet
 
   // Holds burst buffers that cannot be freed yet
@@ -72,13 +71,13 @@ class NetConnectorBasic : public Operator {
   std::queue<RxMsg> out_q;
 
   // Buffer memory and tracking
-  std::array<void**, num_concurrent> h_dev_ptrs_;         // Host-pinned list of device pointers
-  std::array<void*, num_concurrent> full_batch_data_h_;   // Host aggregated batch
-  std::array<uint64_t**, num_concurrent> ttl_pkts_drop_;  // Total packets dropped by kernel
+  std::vector<void**> h_dev_ptrs_;         // Host-pinned list of device pointers
+  std::vector<void*> full_batch_data_h_;   // Host aggregated batch
+  std::vector<uint64_t**> ttl_pkts_drop_;  // Total packets dropped by kernel
 
   // Concurrent batch structures
-  std::array<cudaStream_t, num_concurrent> streams_;
-  std::array<cudaEvent_t, num_concurrent> events_;
+  std::vector<cudaStream_t> streams_;
+  std::vector<cudaEvent_t> events_;
   int cur_idx = 0;
 
   // Holds burst buffers that cannot be freed yet

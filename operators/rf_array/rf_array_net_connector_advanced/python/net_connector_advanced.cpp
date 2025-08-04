@@ -49,8 +49,9 @@ class PyNetConnectorAdvanced : public NetConnectorAdvanced {
       uint16_t num_subchannels, double freq_idx_scaling = 1, double freq_idx_offset = 0,
       bool apply_conjugate = false, bool spoof_header = false, uint16_t packet_skip_bytes = 0,
       std::optional<std::map<std::string, uint64_t>> header_metadata = std::nullopt,
-      uint32_t batch_size = 1000, uint16_t max_packet_size = 9000, bool gpu_direct = true,
-      bool use_header_data_split = true, const std::string& name = "net_connector_advanced")
+      uint32_t batch_size = 1000, uint16_t max_packet_size = 9000, uint16_t batch_capacity = 4,
+      bool gpu_direct = true, bool use_header_data_split = true,
+      const std::string& name = "net_connector_advanced")
       : NetConnectorAdvanced(ArgList{
             Arg{"buffer_size", buffer_size},
             Arg{"num_samples", num_samples},
@@ -62,6 +63,7 @@ class PyNetConnectorAdvanced : public NetConnectorAdvanced {
             Arg{"packet_skip_bytes", packet_skip_bytes},
             Arg{"batch_size", batch_size},
             Arg{"max_packet_size", max_packet_size},
+            Arg{"batch_capacity", batch_capacity},
             Arg{"gpu_direct", gpu_direct},
             Arg{"use_header_data_split", use_header_data_split},
         }) {
@@ -95,6 +97,7 @@ void bind_rf_array_net_connector_advanced(py::module& m) {
                     std::optional<std::map<std::string, uint64_t>>,
                     uint32_t,
                     uint16_t,
+                    uint16_t,
                     bool,
                     bool,
                     const std::string&>(),
@@ -110,6 +113,7 @@ void bind_rf_array_net_connector_advanced(py::module& m) {
            "header_metadata"_a = py::none(),
            "batch_size"_a = 1000,
            "max_packet_size"_a = 9000,
+           "batch_capacity"_a = 4,
            "gpu_direct"_a = true,
            "use_header_data_split"_a = true,
            "name"_a = "net_connector_advanced"s,

@@ -293,10 +293,21 @@ void NetConnectorAdvanced::free_bufs_and_queue_arrays(std::vector<RFArray<sample
         pos_wrap,
         out_msg.size() - 1);
 
-    // Increment the tracker 'i' number of times. This allows us to not get hung on arrays
-    // where the EOA was either dropped or missed. Ex: if the EOA for array 11 was dropped,
-    // we will emit array 12 when its EOA arrives, incrementing from 10 -> 12.
-    for (size_t j = 0; j <= i; j++) { buffer_track.increment(); }
+    // Set buffer to next position after the one just completed
+    // (place_packet_data kernel will take care of resetting counters)
+    for (size_t j = 0; j < i; j++) {
+      const size_t j_pos_wrap = (buffer_track.pos + j) % buffer_track.buffer_size;
+      if (buffer_track.counter_h[j_pos_wrap] != 0 &&
+          buffer_track.counter_h[j_pos_wrap] < buffer_track.counter_h[pos_wrap]) {
+        HOLOSCAN_LOG_WARN(
+            "Skipped sample buffer {} which only held {}/{} IQ samples (received_end flag was {})",
+            buffer_track.counter_h[j_pos_wrap],
+            buffer_track.sample_cnt_h[j_pos_wrap],
+            num_samples_.get() * num_subchannels_.get(),
+            buffer_track.received_end_h[j_pos_wrap]);
+      }
+    }
+    buffer_track.completed_at_pos(buffer_track.counter_h[pos_wrap]);
     HOLOSCAN_LOG_TRACE("Next sample cycle expected: {}", buffer_track.pos);
 
     buffer_track.transfer(cudaMemcpyHostToDevice, stream);

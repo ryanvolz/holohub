@@ -190,11 +190,13 @@ struct BufferTracking {
     return cudaSuccess;
   }
 
-  void increment() {
+  void completed_at_pos(size_t completed_pos) {
+    pos = completed_pos;
+    pos_wrap = pos % buffer_size;
     received_end_h[pos_wrap] = false;
     sample_cnt_h[pos_wrap] = 0;
-    counter_h[pos_wrap] += buffer_size;
-    pos++;
+    // leave counter_h untouched because kernel will update it when needed
+    ++pos;
     pos_wrap = pos % buffer_size;
   }
 

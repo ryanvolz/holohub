@@ -27,7 +27,7 @@ void NetConnectorBasic::setup(OperatorSpec& spec) {
   // in the `inputs` map and call `connector()` to add a kDoubleBuffer resource with capacity
   // set to the value of the batch_capacity parameter.
   spec.input<std::shared_ptr<NetworkOpBurstParams>>("burst_in");
-  spec.output<std::shared_ptr<std::vector<RFArray<sample_t>>>>("rf_out");
+  spec.output<std::shared_ptr<RFArray<sample_t>>>("rf_out");
 
   // Array settings
   spec.param<uint16_t>(buffer_size_,
@@ -233,7 +233,7 @@ std::vector<NetConnectorBasic::RxMsg> NetConnectorBasic::check_completed() {
   return completed;
 }
 
-void NetConnectorBasic::check_completed_and_queue_arrays(std::vector<RFArray<sample_t>>& out_msg,
+void NetConnectorBasic::check_completed_and_queue_arrays(OutputContext& op_output,
                                                          cudaStream_t& op_stream) {
   // We have to wait for the packet placement to finish because we don't know if a buffer is
   // filled until we check the result of the copy
@@ -263,15 +263,14 @@ void NetConnectorBasic::check_completed_and_queue_arrays(std::vector<RFArray<sam
     // complete
     cudaStreamSynchronize(stream);
     auto out_metadata = out_metadata_tensor();
-    out_msg.emplace_back(out_data, out_metadata);
+    auto out_ptr = std::make_shared<RFArray<sample_t>>(out_data, out_metadata);
+    op_output.emit(out_ptr, "rf_out");
 
     HOLOSCAN_LOG_DEBUG(
-        "Emitting sample buffer {} with {} IQ samples from internal staging buffer {} into message "
-        "queue position {}",
+        "Emitting sample buffer {} with {} IQ samples from internal staging buffer {}",
         buffer_track.counter_h[pos_wrap],
         buffer_track.sample_cnt_h[pos_wrap],
-        pos_wrap,
-        out_msg.size() - 1);
+        pos_wrap);
 
     // Set buffer to next position after the one just completed
     // (place_packet_data kernel will take care of resetting counters)
@@ -299,9 +298,6 @@ void NetConnectorBasic::check_completed_and_queue_arrays(std::vector<RFArray<sam
 void NetConnectorBasic::compute(InputContext& op_input, OutputContext& op_output,
                                 ExecutionContext& context) {
   HOLOSCAN_LOG_TRACE("NetConnectorBasic::compute() called");
-  // always emit one message per compute, even if empty vector
-  auto out_msg_ptr = std::make_shared<std::vector<RFArray<sample_t>>>();
-
   auto burst_maybe = op_input.receive<std::shared_ptr<NetworkOpBurstParams>>("burst_in");
   cudaStream_t op_stream = op_input.receive_cuda_stream("burst_in", true, false);
   while (burst_maybe) {
@@ -341,7 +337,7 @@ void NetConnectorBasic::compute(InputContext& op_input, OutputContext& op_output
             aggr_pkts_recv_,
             batch_size_.get());
         do {
-          check_completed_and_queue_arrays(*out_msg_ptr, op_stream);
+          check_completed_and_queue_arrays(op_output, op_stream);
           if (out_q.size() >= batch_capacity_.get()) {
             HOLOSCAN_LOG_ERROR("Fell behind in processing on GPU!");
             cudaStreamSynchronize(streams_[cur_idx]);
@@ -395,11 +391,8 @@ void NetConnectorBasic::compute(InputContext& op_input, OutputContext& op_output
     burst_maybe = op_input.receive<std::shared_ptr<NetworkOpBurstParams>>("burst_in");
   }
 
-  // One final check for completed arrays before emitting and exiting
-  check_completed_and_queue_arrays(*out_msg_ptr, op_stream);
-  if (!out_msg_ptr->empty()) {
-    op_output.emit(out_msg_ptr, "rf_out");
-  }
+  // One final check for completed arrays before exiting
+  check_completed_and_queue_arrays(op_output, op_stream);
 }
 
 void NetConnectorBasic::stop() {

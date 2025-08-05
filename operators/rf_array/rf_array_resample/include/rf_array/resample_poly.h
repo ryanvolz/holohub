@@ -17,7 +17,6 @@
 #pragma once
 
 #include <memory>
-#include <optional>
 #include <vector>
 
 #include <matx.h>
@@ -48,7 +47,7 @@ class ResamplePoly : public Operator {
   Parameter<uint16_t> down;
   Parameter<std::vector<float, std::allocator<float>>> filter_coefs;
 
-  std::optional<RFArray<complex_t>> prior_input;
+  std::shared_ptr<RFArray<complex_t>> prior_input;
   uint32_t pad_size;
   uint32_t out_pad_size;
   uint32_t out_chunk_size;

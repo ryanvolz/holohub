@@ -68,7 +68,7 @@ class NetConnectorAdvanced : public Operator {
     cudaEvent_t evt;
   };
   std::vector<RxMsg> free_bufs();
-  void free_bufs_and_queue_arrays(std::vector<RFArray<sample_t>>& out_msg, cudaStream_t& op_stream);
+  void free_bufs_and_queue_arrays(OutputContext& op_output, cudaStream_t& op_stream);
 
   RxMsg cur_msg_{};
   std::queue<RxMsg> out_q;

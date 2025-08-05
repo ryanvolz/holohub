@@ -64,8 +64,7 @@ class NetConnectorBasic : public Operator {
     cudaEvent_t evt;
   };
   std::vector<RxMsg> check_completed();
-  void check_completed_and_queue_arrays(std::vector<RFArray<sample_t>>& out_msg,
-                                        cudaStream_t& op_stream);
+  void check_completed_and_queue_arrays(OutputContext& op_output, cudaStream_t& op_stream);
 
   RxMsg cur_msg_{};
   std::queue<RxMsg> out_q;

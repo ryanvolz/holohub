@@ -25,8 +25,8 @@ namespace holoscan::ops {
 // ----- SubchannelSelect ---------------------------------------------------
 template <typename sampleType>
 void SubchannelSelect<sampleType>::setup(OperatorSpec& spec) {
-  spec.input<std::shared_ptr<std::vector<RFArray<sampleType>>>>("rf_in");
-  spec.output<std::shared_ptr<std::vector<RFArray<sampleType>>>>("rf_out");
+  spec.input<std::shared_ptr<RFArray<sampleType>>>("rf_in");
+  spec.output<std::shared_ptr<RFArray<sampleType>>>("rf_out");
 
   spec.param<std::vector<int, std::allocator<int>>>(
       subchannel_idx,
@@ -58,20 +58,21 @@ template <typename sampleType>
 void SubchannelSelect<sampleType>::compute(InputContext& op_input, OutputContext& op_output,
                                            ExecutionContext&) {
   HOLOSCAN_LOG_TRACE("SubchannelSelect::compute() called");
-  auto in_msg_ptr =
-      op_input.receive<std::shared_ptr<std::vector<RFArray<sampleType>>>>("rf_in").value();
+  auto in_ptr_maybe = op_input.receive<std::shared_ptr<RFArray<sampleType>>>("rf_in");
   cudaStream_t stream = op_input.receive_cuda_stream("rf_in", true, false);
 
-  auto out_msg_ptr = std::make_shared<std::vector<RFArray<sampleType>>>();
-
-  for (auto in : (*in_msg_ptr)) {
+  while (in_ptr_maybe) {
+    auto in_ptr = in_ptr_maybe.value();
     auto out_tensor = matx::make_tensor<sampleType>(
-        {in.data.Size(0), idx_len}, matx::MATX_ASYNC_DEVICE_MEMORY, stream);
-    (out_tensor = matx::remap<1>(in.data, subchannel_idx_tensor)).run(stream);
+        {in_ptr->data.Size(0), idx_len}, matx::MATX_ASYNC_DEVICE_MEMORY, stream);
+    (out_tensor = matx::remap<1>(in_ptr->data, subchannel_idx_tensor)).run(stream);
 
-    out_msg_ptr->emplace_back(out_tensor, in.metadata);
+    auto out_ptr = std::make_shared<RFArray<sampleType>>(out_tensor, in_ptr->metadata);
+    op_output.emit(out_ptr, "rf_out");
+
+    // see if we have another array on the receive buffer
+    in_ptr_maybe = op_input.receive<std::shared_ptr<RFArray<sampleType>>>("rf_in");
   }
-  op_output.emit(out_msg_ptr, "rf_out");
 }
 
 template class SubchannelSelect<complex_int_type>;

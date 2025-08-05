@@ -30,7 +30,7 @@ namespace holoscan::ops {
 // ----- DigitalRFSink ---------------------------------------------------
 template <typename sampleType>
 void DigitalRFSink<sampleType>::setup(OperatorSpec& spec) {
-  spec.input<std::shared_ptr<std::vector<RFArray<sampleType>>>>("rf_in");
+  spec.input<std::shared_ptr<RFArray<sampleType>>>("rf_in");
   spec.param<std::string>(channel_dir,
                           "channel_dir",
                           "Channel directory",
@@ -106,31 +106,36 @@ template <typename sampleType>
 void DigitalRFSink<sampleType>::compute(InputContext& op_input, OutputContext& op_output,
                                         ExecutionContext&) {
   HOLOSCAN_LOG_TRACE("DigitalRFSink::compute() called");
-  auto in_msg_ptr =
-      op_input.receive<std::shared_ptr<std::vector<RFArray<sampleType>>>>("rf_in").value();
+  auto in_ptr_maybe = op_input.receive<std::shared_ptr<RFArray<sampleType>>>("rf_in");
   cudaStream_t stream = op_input.receive_cuda_stream("rf_in", true, false);
 
-  std::vector<RFArray<sampleType>> host_vector;
+  std::vector<std::shared_ptr<RFArray<sampleType>>> host_vector;
   std::vector<cudaEvent_t> data_ready_vector;
 
-  for (auto in : (*in_msg_ptr)) {
-    HOLOSCAN_LOG_DEBUG(
-        "Copying {} samples @ {} from GPU memory", in.data.Size(0), in.metadata.sample_idx);
+  while (in_ptr_maybe) {
+    auto in_ptr = in_ptr_maybe.value();
+    HOLOSCAN_LOG_DEBUG("Copying {} samples @ {} from GPU memory",
+                       in_ptr->data.Size(0),
+                       in_ptr->metadata.sample_idx);
 
     // copy incoming data/metadata to host-allocated memory
-    auto host_data = matx::make_tensor<sampleType>(in.data.Shape(), matx::MATX_HOST_MEMORY);
-    matx::copy(host_data, in.data, stream);
-    host_vector.emplace_back(host_data, in.metadata);
+    auto host_data = matx::make_tensor<sampleType>(in_ptr->data.Shape(), matx::MATX_HOST_MEMORY);
+    matx::copy(host_data, in_ptr->data, stream);
+    auto host_arr_ptr = std::make_shared<RFArray<sampleType>>(host_data, in_ptr->metadata);
+    host_vector.push_back(host_arr_ptr);
 
     cudaEvent_t event;
     cudaEventCreate(&event, cudaEventDisableTiming);
     cudaEventRecord(event, stream);
     data_ready_vector.push_back(event);
+
+    // see if we have another array on the receive buffer
+    in_ptr_maybe = op_input.receive<std::shared_ptr<RFArray<sampleType>>>("rf_in");
   }
 
   // initialize writer using data specifications from the first array
-  if (!writer_initialized && !in_msg_ptr->empty()) {
-    auto metadata = in_msg_ptr->front().metadata;
+  if (!writer_initialized && !host_vector.empty()) {
+    auto metadata = host_vector.front()->metadata;
     start_idx = metadata.sample_idx;
     sample_rate_numerator = metadata.sample_rate_numerator;
     sample_rate_denominator = metadata.sample_rate_denominator;
@@ -165,16 +170,19 @@ void DigitalRFSink<sampleType>::compute(InputContext& op_input, OutputContext& o
   // wait for each copy to host memory to complete, then write
   for (size_t i = 0; i < data_ready_vector.size(); ++i) {
     cudaEventSynchronize(data_ready_vector[i]);
-    auto in = host_vector[i];
+    auto in_ptr = host_vector[i];
 
-    HOLOSCAN_LOG_DEBUG("Writing {} samples @ {}", in.data.Size(0), in.metadata.sample_idx);
-    auto result = digital_rf_write_hdf5(
-        drf_writer, in.metadata.sample_idx - start_idx, in.data.Data(), in.data.Size(0));
+    HOLOSCAN_LOG_DEBUG(
+        "Writing {} samples @ {}", in_ptr->data.Size(0), in_ptr->metadata.sample_idx);
+    auto result = digital_rf_write_hdf5(drf_writer,
+                                        in_ptr->metadata.sample_idx - start_idx,
+                                        in_ptr->data.Data(),
+                                        in_ptr->data.Size(0));
     if (result) {
       HOLOSCAN_LOG_ERROR("Digital RF write failed with error {}, sample_idx {}  write_len {}",
                          result,
-                         in.metadata.sample_idx - start_idx,
-                         in.data.Size(0));
+                         in_ptr->metadata.sample_idx - start_idx,
+                         in_ptr->data.Size(0));
       exit(result);
     }
   }
@@ -183,9 +191,13 @@ void DigitalRFSink<sampleType>::compute(InputContext& op_input, OutputContext& o
 template <typename sampleType>
 void DigitalRFSink<sampleType>::stop() {
   // clean up digital RF writer object
-  auto result = digital_rf_close_write_hdf5(drf_writer);
-  if (result) { HOLOSCAN_LOG_ERROR("Failed to close Digital RF writer with error {}", result); }
-  writer_initialized = false;
+  if (writer_initialized) {
+    auto result = digital_rf_close_write_hdf5(drf_writer);
+    if (result) {
+      HOLOSCAN_LOG_ERROR("Failed to close Digital RF writer with error {}", result);
+    }
+    writer_initialized = false;
+  }
 }
 
 template class DigitalRFSink<complex_int_type>;

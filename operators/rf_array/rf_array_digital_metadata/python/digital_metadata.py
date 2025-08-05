@@ -114,11 +114,7 @@ class DigitalMetadataSink(holoscan.core.Operator):
         op_output: holoscan.core.OutputContext,
         context: holoscan.core.ExecutionContext,
     ):
-        rf_message = op_input.receive("rf_in")
-        for rf_array in rf_message:
-            self.compute_one(rf_array)
-
-    def compute_one(self, rf_array):
+        rf_array = op_input.receive("rf_in")
         rf_metadata = rf_array.metadata
 
         if self.writer is None:

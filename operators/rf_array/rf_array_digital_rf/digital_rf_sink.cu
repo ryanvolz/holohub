@@ -16,6 +16,7 @@
  */
 #include <cmath>
 #include <filesystem>
+#include <queue>
 
 #include <digital_rf.h>
 #include <hdf5.h>
@@ -109,8 +110,8 @@ void DigitalRFSink<sampleType>::compute(InputContext& op_input, OutputContext& o
   auto in_ptr_maybe = op_input.receive<std::shared_ptr<RFArray<sampleType>>>("rf_in");
   cudaStream_t stream = op_input.receive_cuda_stream("rf_in", true, false);
 
-  std::vector<std::shared_ptr<RFArray<sampleType>>> host_vector;
-  std::vector<cudaEvent_t> data_ready_vector;
+  std::queue<std::shared_ptr<RFArray<sampleType>>> host_array_ptrs;
+  std::queue<cudaEvent_t> data_ready_events;
 
   while (in_ptr_maybe) {
     auto in_ptr = in_ptr_maybe.value();
@@ -122,20 +123,20 @@ void DigitalRFSink<sampleType>::compute(InputContext& op_input, OutputContext& o
     auto host_data = matx::make_tensor<sampleType>(in_ptr->data.Shape(), matx::MATX_HOST_MEMORY);
     matx::copy(host_data, in_ptr->data, stream);
     auto host_arr_ptr = std::make_shared<RFArray<sampleType>>(host_data, in_ptr->metadata);
-    host_vector.push_back(host_arr_ptr);
+    host_array_ptrs.push(host_arr_ptr);
 
     cudaEvent_t event;
     cudaEventCreate(&event, cudaEventDisableTiming);
     cudaEventRecord(event, stream);
-    data_ready_vector.push_back(event);
+    data_ready_events.push(event);
 
     // see if we have another array on the receive buffer
     in_ptr_maybe = op_input.receive<std::shared_ptr<RFArray<sampleType>>>("rf_in");
   }
 
   // initialize writer using data specifications from the first array
-  if (!drf_writer && !host_vector.empty()) {
-    auto metadata = host_vector.front()->metadata;
+  if (!drf_writer && !host_array_ptrs.empty()) {
+    auto metadata = host_array_ptrs.front()->metadata;
     start_idx = metadata.sample_idx;
     sample_rate_numerator = metadata.sample_rate_numerator;
     sample_rate_denominator = metadata.sample_rate_denominator;
@@ -167,9 +168,10 @@ void DigitalRFSink<sampleType>::compute(InputContext& op_input, OutputContext& o
   }
 
   // wait for each copy to host memory to complete, then write
-  for (size_t i = 0; i < data_ready_vector.size(); ++i) {
-    cudaEventSynchronize(data_ready_vector[i]);
-    auto in_ptr = host_vector[i];
+  while (data_ready_events.size() > 0) {
+    cudaEventSynchronize(data_ready_events.front());
+    data_ready_events.pop();
+    const auto in_ptr = host_array_ptrs.front();
 
     HOLOSCAN_LOG_DEBUG(
         "Writing {} samples @ {}", in_ptr->data.Size(0), in_ptr->metadata.sample_idx);
@@ -184,6 +186,7 @@ void DigitalRFSink<sampleType>::compute(InputContext& op_input, OutputContext& o
                          in_ptr->data.Size(0));
       exit(result);
     }
+    host_array_ptrs.pop();
   }
 }
 

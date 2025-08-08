@@ -69,10 +69,16 @@ PYBIND11_MODULE(_rf_array, m) {
 #endif
 
   py::class_<RFMetadata>(m, "RFMetadata", doc::RFArrayTypes::doc_RFMetadata_python)
-      .def_readonly("sample_idx", &RFMetadata::sample_idx)
-      .def_readonly("sample_rate_numerator", &RFMetadata::sample_rate_numerator)
-      .def_readonly("sample_rate_denominator", &RFMetadata::sample_rate_denominator)
-      .def_readonly("center_freq", &RFMetadata::center_freq);
+      .def(py::init<uint64_t, uint64_t, uint64_t, double>(),
+           "sample_idx"_a,
+           "sample_rate_numerator"_a,
+           "sample_rate_denominator"_a,
+           "center_freq"_a,
+           doc::RFArrayTypes::doc_RFMetadata_python)
+      .def_readwrite("sample_idx", &RFMetadata::sample_idx)
+      .def_readwrite("sample_rate_numerator", &RFMetadata::sample_rate_numerator)
+      .def_readwrite("sample_rate_denominator", &RFMetadata::sample_rate_denominator)
+      .def_readwrite("center_freq", &RFMetadata::center_freq);
 
   py::class_<RFArray<complex_int_type>>(m, "RFArray_sc16", doc::RFArrayTypes::doc_RFArray_python)
       .def(py::init([](holoscan::Tensor data, RFMetadata metadata) {

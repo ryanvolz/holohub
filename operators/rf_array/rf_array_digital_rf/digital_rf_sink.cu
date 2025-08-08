@@ -134,7 +134,7 @@ void DigitalRFSink<sampleType>::compute(InputContext& op_input, OutputContext& o
   }
 
   // initialize writer using data specifications from the first array
-  if (!writer_initialized && !host_vector.empty()) {
+  if (!drf_writer && !host_vector.empty()) {
     auto metadata = host_vector.front()->metadata;
     start_idx = metadata.sample_idx;
     sample_rate_numerator = metadata.sample_rate_numerator;
@@ -164,7 +164,6 @@ void DigitalRFSink<sampleType>::compute(InputContext& op_input, OutputContext& o
           sample_rate_numerator,
           sample_rate_denominator);
     }
-    writer_initialized = true;
   }
 
   // wait for each copy to host memory to complete, then write
@@ -191,12 +190,12 @@ void DigitalRFSink<sampleType>::compute(InputContext& op_input, OutputContext& o
 template <typename sampleType>
 void DigitalRFSink<sampleType>::stop() {
   // clean up digital RF writer object
-  if (writer_initialized) {
+  if (drf_writer) {
     auto result = digital_rf_close_write_hdf5(drf_writer);
     if (result) {
       HOLOSCAN_LOG_ERROR("Failed to close Digital RF writer with error {}", result);
     }
-    writer_initialized = false;
+    drf_writer = nullptr;
   }
 }
 

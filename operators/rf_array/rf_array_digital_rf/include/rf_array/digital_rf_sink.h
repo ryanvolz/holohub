@@ -57,14 +57,13 @@ class DigitalRFSink : public Operator {
   Parameter<bool> is_continuous;
   Parameter<bool> marching_dots;
 
-  bool writer_initialized = false;
   hid_t hdf5_dtype;
   bool is_complex;
   uint64_t start_idx;
   uint64_t sample_rate_numerator;
   uint64_t sample_rate_denominator;
   std::filesystem::path channel_dir_path;
-  Digital_rf_write_object* drf_writer;
+  Digital_rf_write_object* drf_writer = nullptr;
 };  // DigitalRFSink
 
 }  // namespace holoscan::ops

@@ -89,10 +89,10 @@ PYBIND11_MODULE(_rf_array, m) {
            "data"_a,
            "metadata"_a,
            doc::RFArrayTypes::doc_RFArray_python)
-      .def_property_readonly(
-          "data",
-          [](const RFArray<complex_int_type>& a) { return holoscan::Tensor(a.data.ToDlPack()); },
-          py::return_value_policy::take_ownership)
+      .def_property_readonly("data",
+                             [](const RFArray<complex_int_type>& a) {
+                               return std::make_shared<holoscan::Tensor>(a.data.ToDlPack());
+                             })
       .def_readonly("metadata", &RFArray<complex_int_type>::metadata);
 
   py::class_<RFArray<complex_t>>(m, "RFArray_fc32", doc::RFArrayTypes::doc_RFArray_python)
@@ -104,10 +104,10 @@ PYBIND11_MODULE(_rf_array, m) {
            "data"_a,
            "metadata"_a,
            doc::RFArrayTypes::doc_RFArray_python)
-      .def_property_readonly(
-          "data",
-          [](const RFArray<complex_t>& a) { return holoscan::Tensor(a.data.ToDlPack()); },
-          py::return_value_policy::take_ownership)
+      .def_property_readonly("data",
+                             [](const RFArray<complex_t>& a) {
+                               return std::make_shared<holoscan::Tensor>(a.data.ToDlPack());
+                             })
       .def_readonly("metadata", &RFArray<complex_t>::metadata);
 
   // Import the emitter/receiver registry from holoscan.core and pass it to this function to

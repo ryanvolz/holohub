@@ -15,10 +15,12 @@
  * limitations under the License.
  */
 
-#include "advanced_network/common.h"
 #include <pybind11/pybind11.h>
+#include <yaml-cpp/yaml.h>
+#include "advanced_network/common.h"
 
 namespace py = pybind11;
+using pybind11::literals::operator""_a;
 
 namespace holoscan::advanced_network {
 
@@ -30,6 +32,63 @@ PYBIND11_MODULE(_advanced_network_common, m) {
       .value("NULL_PTR", Status::NULL_PTR)
       .value("NO_FREE_BURST_BUFFERS", Status::NO_FREE_BURST_BUFFERS)
       .value("NO_FREE_PACKET_BUFFERS", Status::NO_FREE_PACKET_BUFFERS);
+
+  // Network initialization and configuration
+  m.def(
+      "adv_net_init",
+      [](py::object config_obj) -> Status {
+        try {
+          // The config_obj is likely a Holoscan Arg or similar object
+          // We need to extract the underlying YAML data
+
+          std::string yaml_str;
+
+          // Check if it has a 'value' attribute (Holoscan Arg objects)
+          if (py::hasattr(config_obj, "value")) {
+            auto value = config_obj.attr("value");
+            yaml_str = py::str(value);
+          } else if (py::hasattr(config_obj, "as_dict")) {
+            auto dict_obj = config_obj.attr("as_dict")();
+            try {
+              py::object yaml_module = py::module_::import("yaml");
+              py::object py_yaml_str =
+                  yaml_module.attr("dump")(dict_obj, py::arg("default_flow_style") = false);
+              yaml_str = py::cast<std::string>(py_yaml_str);
+            } catch (const py::error_already_set& e) {
+              HOLOSCAN_LOG_ERROR("Failed to import yaml module or convert dict to YAML: {}",
+                                 e.what());
+              HOLOSCAN_LOG_ERROR("Please install PyYAML: pip install PyYAML");
+              return Status::INTERNAL_ERROR;
+            }
+          } else {
+            yaml_str = py::str(config_obj);
+          }
+
+          HOLOSCAN_LOG_DEBUG("Attempting to parse YAML config: {}", yaml_str);
+
+          // Parse YAML string to YAML::Node
+          YAML::Node yaml_node = YAML::Load(yaml_str);
+
+          // Use the existing YAML::convert specialization to convert to NetworkConfig
+          NetworkConfig config = yaml_node.as<NetworkConfig>();
+
+          // Call the actual initialization function
+          auto status = adv_net_init(config);
+          if (status == Status::SUCCESS) {
+            HOLOSCAN_LOG_INFO("Successfully initialized Advanced Network from Python config");
+          }
+          return status;
+        } catch (const YAML::Exception& e) {
+          HOLOSCAN_LOG_ERROR("YAML parsing error in Python config: {}", e.what());
+          return Status::INVALID_PARAMETER;
+        } catch (const std::exception& e) {
+          HOLOSCAN_LOG_ERROR("Failed to initialize advanced network from Python config: {}",
+                             e.what());
+          return Status::INTERNAL_ERROR;
+        }
+      },
+      "config"_a,
+      "Initialize the advanced network backend from Holoscan config object");
 
   m.def("create_tx_burst_params",
         &create_tx_burst_params,

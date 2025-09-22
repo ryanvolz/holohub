@@ -19,10 +19,11 @@ add_holohub_package(holoscan-networking
                     APPLICATIONS adv_networking_bench basic_networking_ping
                     OPERATORS advanced_network basic_network)
 add_holohub_package(holoscan-rf-array
-                    APPLICATIONS sdr_mep_recorder
-                    OPERATORS basic_network
+                    OPERATORS advanced_network
+                              basic_network
                               rf_array_digital_metadata
                               rf_array_digital_rf
+                              rf_array_net_connector_advanced
                               rf_array_net_connector_basic
                               rf_array_resample
                               rf_array_rotator

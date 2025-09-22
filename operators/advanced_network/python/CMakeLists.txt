@@ -19,29 +19,19 @@ include(pybind11_add_holohub_module)
 find_package(holoscan 2.6 REQUIRED CONFIG
              PATHS "/opt/nvidia/holoscan" "/workspace/holoscan-sdk/install") # Remove if holoscan logger dependency removed
 
-set(MODULE_NAME advanced_network_common)
-set(MODULE_CLASS_NAME "*")
-
-pybind11_add_module(${MODULE_NAME}_python MODULE adv_network_common_pybind.cpp)
-#target_link_libraries(${MODULE_NAME}_python PRIVATE holoscan::core)
-
-target_link_libraries(${MODULE_NAME}_python
-PRIVATE
-    holoscan::core
-    ${MODULE_NAME}
+pybind11_add_holohub_module(
+    CPP_CMAKE_TARGET advanced_network_common
+    CLASS_NAME "*"
+    SOURCES adv_network_common_pybind.cpp
 )
 
-set(CMAKE_PYBIND11_HOLOHUB_MODULE_OUT_DIR ${CMAKE_BINARY_DIR}/python/${CMAKE_INSTALL_LIBDIR}/holohub)
-set(CMAKE_SUBMODULE_OUT_DIR ${CMAKE_PYBIND11_HOLOHUB_MODULE_OUT_DIR}/${MODULE_NAME})
-
-set_target_properties(${MODULE_NAME}_python PROPERTIES
-    LIBRARY_OUTPUT_DIRECTORY ${CMAKE_SUBMODULE_OUT_DIR}
-    OUTPUT_NAME _${MODULE_NAME}
-)
-
-configure_file(
-    ${CMAKE_CURRENT_FUNCTION_LIST_DIR}/pybind11/__init__.py
-    ${CMAKE_PYBIND11_HOLOHUB_MODULE_OUT_DIR}/advanced_network_common/__init__.py
+install(
+    DIRECTORY "${HOLOHUB_PYTHON_MODULE_OUT_DIR}/advanced_network_common"
+    DESTINATION python/lib/holohub/
+    FILE_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
+    DIRECTORY_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
+    COMPONENT advanced_network-py
+    PATTERN "__pycache__" EXCLUDE
 )
 
 # UTILS

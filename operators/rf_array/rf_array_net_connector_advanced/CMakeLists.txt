@@ -32,7 +32,7 @@ target_include_directories(rf_array_net_connector_advanced
 target_link_libraries(rf_array_net_connector_advanced
   PUBLIC
     holoscan::core
-    holoscan::ops::advanced_network_rx
+    holoscan::advanced_network
     holoscan::ops::rf_array
     matx::matx
     rf_array_net_connector_common

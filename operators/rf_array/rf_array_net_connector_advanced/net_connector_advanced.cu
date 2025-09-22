@@ -14,6 +14,8 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+#include "advanced_network/common.h"
+#include "advanced_network/types.h"
 #include "holoscan/holoscan.hpp"
 #include "rf_array/net_connector_advanced.h"
 #include "rf_array/net_connector_common.h"
@@ -27,7 +29,6 @@ void NetConnectorAdvanced::setup(OperatorSpec& spec) {
   // but there's no good way to do that other than to do when creating the operator within
   // an application. So when you use create NetConnectorBasic, add a DoubleBufferReceiver
   // resource with capacity set to the value of the batch_capacity parameter.
-  spec.input<std::shared_ptr<BurstParams>>("burst_in");
   spec.output<std::shared_ptr<RFArray<sample_t>>>("rf_out");
 
   // Array settings
@@ -82,6 +83,16 @@ void NetConnectorAdvanced::setup(OperatorSpec& spec) {
                                               {});
 
   // Networking settings
+  spec.param<std::string>(interface_name_,
+                          "interface_name",
+                          "Name of the network interface",
+                          "Name of the interface to use from the advanced_network config",
+                          "rx_port");
+  spec.param<uint16_t>(queue_id_,
+                       "queue_id",
+                       "Queue to process",
+                       "ID of the queue from the advanced_network config to process",
+                       0);
   spec.param<bool>(use_hds_,
                    "use_header_data_split",
                    "Use header-data split",
@@ -113,6 +124,13 @@ void NetConnectorAdvanced::initialize() {
   HOLOSCAN_LOG_INFO("NetConnectorAdvanced::initialize()");
   register_converter<std::map<std::string, uint64_t>>();
   holoscan::Operator::initialize();
+
+  port_id_ = get_port_id(interface_name_.get());
+  if (port_id_ == -1) {
+    HOLOSCAN_LOG_ERROR("Invalid network interface {} specified in the config",
+                       interface_name_.get());
+    exit(1);
+  }
 
   // Maximum number of RF samples (of num_subchannels I/Q samples) per packet
   max_samples_per_packet = (max_packet_size_.get() - sizeof(RFPacketHeader)) /
@@ -173,7 +191,7 @@ void NetConnectorAdvanced::initialize() {
   // Allocate memory and create CUDA streams for each concurrent batch
   for (int n = 0; n < batch_capacity_.get(); n++) {
     cudaMallocHost((void**)&h_dev_ptrs_[n], sizeof(void*) * batch_size_.get());
-    if (cudaSuccess != cuda_error) {
+    if (cudaGetLastError() != cudaSuccess) {
       throw std::runtime_error("Could not allocate cuda memory for h_dev_ptrs_");
     }
     if (!gpu_direct_.get()) {
@@ -284,6 +302,8 @@ void NetConnectorAdvanced::free_bufs_and_queue_arrays(OutputContext& op_output,
     cudaStreamSynchronize(stream);
     auto out_metadata = out_metadata_tensor();
     auto out_ptr = std::make_shared<RFArray<sample_t>>(out_data, out_metadata);
+    // Need to manually set stream on output because it was not gotten by receive_cuda_stream
+    op_output.set_cuda_stream(op_stream, "rf_out");
     op_output.emit(out_ptr, "rf_out");
 
     HOLOSCAN_LOG_DEBUG(
@@ -320,11 +340,17 @@ void NetConnectorAdvanced::compute(InputContext& op_input, OutputContext& op_out
   HOLOSCAN_LOG_TRACE("NetConnectorAdvanced::compute() called");
   int64_t ttl_bytes_in_cur_batch_ = 0;
 
-  auto burst_maybe = op_input.receive<BurstParams*>("burst_in");
-  cudaStream_t op_stream = op_input.receive_cuda_stream("burst_in", true, false);
-  while (burst_maybe) {
-    auto burst = burst_opt.value();
+  auto maybe_stream = context.allocate_cuda_stream("op_stream");
+  if (!maybe_stream) {
+    const auto& error = maybe_stream.error();
+    throw std::runtime_error(
+        fmt::format("Failed to allocate cuda stream with error: {}", error.what()));
+  }
+  cudaStream_t op_stream = maybe_stream.value();
 
+  BurstParams* burst;
+  auto burst_status = get_rx_burst(&burst, port_id_, queue_id_.get());
+  while (burst_status == Status::SUCCESS) {
     auto burst_size = get_num_packets(burst);
 
     HOLOSCAN_LOG_DEBUG("Handling burst of {} packets with {} packets already in buffer",
@@ -334,8 +360,8 @@ void NetConnectorAdvanced::compute(InputContext& op_input, OutputContext& op_out
     auto burst_pkts_remaining = burst_size;
 
     while (burst_pkts_remaining > 0) {
-      auto num_pkts_to_copy = std::min(burst_pkts_remaining,
-                                       static_cast<uint32_t>(batch_size_.get() - aggr_pkts_recv_));
+      auto num_pkts_to_copy =
+          std::min(burst_pkts_remaining, static_cast<int64_t>(batch_size_.get() - aggr_pkts_recv_));
 
       // Track packet payloads for the current burst
       if (gpu_direct_.get()) {
@@ -462,7 +488,7 @@ void NetConnectorAdvanced::compute(InputContext& op_input, OutputContext& op_out
     }
 
     // see if we have another burst on the receive buffer
-    burst_maybe = op_input.receive<BurstParams*>("burst_in");
+    burst_status = get_rx_burst(&burst, port_id_, queue_id_.get());
   }
 
   // One final check for completed arrays before exiting

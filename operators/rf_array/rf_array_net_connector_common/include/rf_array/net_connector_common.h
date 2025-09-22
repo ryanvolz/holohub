@@ -27,14 +27,6 @@
 #include "holoscan/holoscan.hpp"
 #include "rf_array/rf_array.h"
 
-// IPV4 UDP packet using Linux headers
-struct UDPIPV4Pkt {
-  struct ethhdr eth;
-  struct iphdr ip;
-  struct udphdr udp;
-  uint8_t payload[];
-} __attribute__((packed));
-
 // Packet header for RF signal
 struct RFPacketHeader {
   uint64_t sample_idx;

@@ -71,6 +71,10 @@ max_packet_size : int, optional
     Maximum packet size (not including network protocol headers) expected from sender.
 batch_capacity: int, optional
     Input buffer capacity in number of network packet batches.
+interface_name: str, optional
+    Name of the interface to use from the advanced_network config.
+queue_id: int, optional
+    ID of the queue from the advanced_network config to process.
 gpu_direct : bool, optional
     Whether GPUDirect is enabled for the advanced network operator.
 use_header_data_split : bool, optional

@@ -18,7 +18,7 @@
 
 #include <matx.h>
 
-#include "adv_network_rx.h"
+#include "advanced_network/common.h"
 #include "holoscan/holoscan.hpp"
 #include "rf_array/net_connector_common.h"
 #include "rf_array/rf_array.h"
@@ -55,14 +55,17 @@ class NetConnectorAdvanced : public Operator {
   Parameter<std::map<std::string, uint64_t>> header_metadata_;
 
   // Networking settings
-  Parameter<bool> use_hds_;              // Header-data split enabled
-  Parameter<bool> gpu_direct_;           // GPUDirect enabled
-  Parameter<uint32_t> batch_size_;       // Batch size for one processing block
-  Parameter<uint16_t> max_packet_size_;  // Maximum size of a single packet
+  Parameter<std::string> interface_name_;  // Name given to network interface in advanced config
+  Parameter<uint16_t> queue_id_;           // ID of the queue to process
+  Parameter<bool> use_hds_;                // Header-data split enabled
+  Parameter<bool> gpu_direct_;             // GPUDirect enabled
+  Parameter<uint32_t> batch_size_;         // Batch size for one processing block
+  Parameter<uint16_t> batch_capacity_;
+  Parameter<uint16_t> max_packet_size_;    // Maximum size of a single packet
 
   // Holds burst buffers that cannot be freed yet
   struct RxMsg {
-    std::array<std::shared_ptr<holoscan::advanced_network::BurstParams>, MAX_ANO_BATCHES> msg;
+    std::array<holoscan::advanced_network::BurstParams*, MAX_ANO_BATCHES> msg;
     int num_batches;
     cudaStream_t stream;
     cudaEvent_t evt;
@@ -88,6 +91,7 @@ class NetConnectorAdvanced : public Operator {
   int64_t ttl_pkts_recv_ = 0;   // Total packets received in operator
   int64_t aggr_pkts_recv_ = 0;  // Aggregate packets received in processing batch
 
+  int port_id_;
   uint32_t max_samples_per_packet;
   size_t samples_per_arr;
   BufferTracking buffer_track;

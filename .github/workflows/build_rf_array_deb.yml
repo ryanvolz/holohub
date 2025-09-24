@@ -29,6 +29,19 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get install -y cuda-toolkit holoscan=${{ env.HOLOSCAN_VERSION }}* libhdf5-dev
+      - name: Checkout dpdk
+        uses: actions/checkout@v4
+        with:
+          repository: "ryanvolz/dpdk-stable"
+          ref: 22.11-jetson
+          path: "dpdk"
+      - name: Build dpdk DEB package
+        run: |
+          sudo apt-get install -y debhelper build-essential dh-make chrpath libbpf-dev libelf-dev libibverbs-dev libnuma-dev libpcap0.8-dev meson pkgconf python3-pyelftools
+          pushd dpdk
+          DEB_BUILD_OPTIONS="nocheck noautodbgsym" dpkg-buildpackage -us -uc -b
+          popd
+          sudo dpkg -i dpdk-for-jetson_*.deb
       - name: Checkout holoscan
         uses: actions/checkout@v4
         with:
@@ -46,10 +59,12 @@ jobs:
           sudo ln -s /usr/local/cuda/targets/aarch64-linux/lib/stubs/libcuda.so /usr/lib/libcuda.so.1
       - name: Run build
         run: |
-          ./run build holoscan-rf-array --buildpath build --configure-args "-DCMAKE_CUDA_ARCHITECTURES=87 -DCMAKE_VERBOSE_MAKEFILE=ON -DHOLOHUB_DOWNLOAD_DATASETS=OFF" --type release --parallel 4
+          ./run build holoscan-rf-array --buildpath build --configure-args "-DCMAKE_CUDA_ARCHITECTURES=87 -DCMAKE_VERBOSE_MAKEFILE=ON -DANO_MGR='dpdk' -DHOLOHUB_DOWNLOAD_DATASETS=OFF" --type release --parallel 4
       - name: Upload DEB package artifact
         uses: actions/upload-artifact@v4
         with:
           name: holoscan-rf-array-deb
-          path: holoscan-rf-array_*.deb
+          path: |
+            dpdk-for-jetson_*.deb
+            holoscan-rf-array_*.deb
           if-no-files-found: error

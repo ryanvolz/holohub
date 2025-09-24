@@ -61,7 +61,7 @@ RUN apt-get install -y --no-install-recommends \
         pkgconf \
         python3-pyelftools \
         zlib1g
-ADD https://github.com/ryanvolz/dpdk-stable.git#22.11-jetson /dpdk
+ADD https://github.com/ryanvolz/dpdk-stable.git#24.11-jetson /dpdk
 WORKDIR /dpdk
 RUN meson build \
         -Dc_args=-I/usr/local/cuda/include \

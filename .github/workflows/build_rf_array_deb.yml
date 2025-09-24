@@ -33,7 +33,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: "ryanvolz/dpdk-stable"
-          ref: 22.11-jetson
+          ref: 24.11-jetson
           path: "dpdk"
       - name: Build dpdk DEB package
         run: |

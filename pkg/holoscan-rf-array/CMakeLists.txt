@@ -13,6 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# will add dependencies on linked libraries like libhdf5 (from libdigital_rf)
 set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
 
 holohub_configure_deb(

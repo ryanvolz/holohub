@@ -46,15 +46,38 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         cmake-data=3.26.* \
         file \
         libhdf5-dev \
-    && rm /usr/local/bin/cmake /usr/local/bin/cpack \
-    && rm -rf /var/lib/apt/lists/*
+    && rm /usr/local/bin/cmake /usr/local/bin/cpack
+
+#
+# Build other dependencies
+#
+RUN apt-get install -y --no-install-recommends \
+        libbpf-dev \
+        libelf-dev \
+        libibverbs-dev \
+        libpcap0.8-dev \
+        libssl-dev \
+        meson \
+        pkgconf \
+        python3-pyelftools \
+        zlib1g
+ADD https://github.com/ryanvolz/dpdk-stable.git#22.11-jetson /dpdk
+WORKDIR /dpdk
+RUN meson build \
+        -Dc_args=-I/usr/local/cuda/include \
+        -Dplatform=jetsonorin \
+        -Dexamples=ethtool \
+        -Ddisable_drivers=baseband/*,bus/ifpga/*,common/cpt,common/cnxk,common/dpaax,common/iavf,common/octeontx,common/octeontx2,crypto/nitrox,event/cnxk,net/ark,net/atlantic,net/avp,net/axgbe,net/bnx2x,net/bnxt,net/cnxk,net/cxgbe,net/e1000,net/ena,net/enic,net/fm10k,net/hinic,net/hns3,net/i40e,vdpa/ifc,net/igc,net/liquidio,net/netvsc,net/nfp,net/qede,net/sfc,net/thunderx,net/vdev_netvsc,net/vmxnet3,regex/octeontx2 \
+    && ninja -C build \
+    && ninja -C build install \
+    && ldconfig
 
 #
 # Build holoscan-rf-array
 ARG BUILD_CUDA_ARCHITECTURES=87
 WORKDIR /holohub
 COPY . .
-ENV HOLOHUB_CMAKE_ARGS="-DCMAKE_CUDA_ARCHITECTURES=${BUILD_CUDA_ARCHITECTURES} -DCMAKE_VERBOSE_MAKEFILE=ON -DHOLOHUB_DOWNLOAD_DATASETS=OFF"
+ENV HOLOHUB_CMAKE_ARGS="-DCMAKE_CUDA_ARCHITECTURES=${BUILD_CUDA_ARCHITECTURES} -DCMAKE_VERBOSE_MAKEFILE=ON -DANO_MGR='dpdk' -DHOLOHUB_DOWNLOAD_DATASETS=OFF"
 
 RUN ./run build holoscan-rf-array --buildpath build \
     --configure-args "${HOLOHUB_CMAKE_ARGS}" \
@@ -104,6 +127,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libcurand-${CUDA_VERSION_STRING} \
     libcusolver-${CUDA_VERSION_STRING} \
     libnvjitlink-${CUDA_VERSION_STRING} \
+    ibverbs-providers \
+    libbpf0 \
+    libelf1 \
+    libibverbs1 \
+    libnuma1 \
+    libpcap0.8 \
+    libssl3 \
+    zlib1g \
     && apt-get download cuda-compat-${CUDA_VERSION_STRING} \
     && dpkg-deb -R ./cuda-compat-${CUDA_VERSION_STRING}_*_arm64.deb ./cuda-compat \
     && cp -r ./cuda-compat/usr/local/* /usr/local/ \
@@ -115,6 +146,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Install Python dependencies not covered by deb packages
 #
 RUN python3 -m pip install --no-cache-dir holoscan==${HOLOSCAN_VERSION} numpy==1.26 cupy-cuda12x scipy==1.15
+
+#
+# Install DPDK libraries from build stage
+#
+# Use bind mount and cp command to preserve symlinks (which COPY does not do)
+RUN --mount=type=bind,from=build,source=/usr/local/lib/aarch64-linux-gnu,target=/build/lib \
+    mkdir -p /usr/local/lib/aarch64-linux-gnu \
+    && cp -a /build/lib/librte_* /build/lib/dpdk /usr/local/lib/aarch64-linux-gnu
 
 #
 # Install holoscan-rf-array

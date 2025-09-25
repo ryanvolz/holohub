@@ -27,8 +27,10 @@ __all__ = ["DigitalRFSinkParams"]
 class DigitalRFSinkParams:
     """Digital RF Sink parameters"""
 
-    channel_dir: os.PathLike
-    """Directory for writing the Digital RF channel"""
+    channel_dir: str
+    """Channel directory under `output_path` where the Digital RF channel is to be written"""
+    output_path: Optional[os.PathLike] = "."
+    """Parent directory for writing output files"""
     chunk_size: Optional[PositiveInt] = None
     """Number of samples to operate on in one chunk"""
     num_subchannels: Optional[PositiveInt] = None

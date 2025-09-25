@@ -36,6 +36,7 @@ class DigitalMetadataSink(holoscan.core.Operator):
         self,
         fragment,
         *args,
+        output_path,
         metadata_dir,
         subdir_cadence_secs=3600,
         file_cadence_secs=1,
@@ -55,8 +56,10 @@ class DigitalMetadataSink(holoscan.core.Operator):
         ----------
         fragment : Fragment
             The fragment that the operator belongs to.
-        metadata_dir : os.PathLike or str
-            The directory where the metadata channel is to be written.
+        output_path : os.PathLike
+            Parent directory for writing output files.
+        metadata_dir : str
+            Channel directory under `output_path` where the metadata channel is to be written.
         subdir_cadence_secs : int, optional
             Subdirectory cadence in number of seconds.
         file_cadence_secs : int, optional
@@ -68,7 +71,7 @@ class DigitalMetadataSink(holoscan.core.Operator):
         metadata : dict, optional
             (Nested) dictionary of additional metadata to include in each Digital Metadata sample.
         """
-        self.metadata_dir = pathlib.Path(metadata_dir).resolve()
+        self.metadata_dir = pathlib.Path(output_path).resolve() / metadata_dir
         self.subdir_cadence_secs = subdir_cadence_secs
         self.file_cadence_secs = file_cadence_secs
         if uuid is None:

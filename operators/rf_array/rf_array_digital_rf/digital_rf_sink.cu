@@ -32,11 +32,14 @@ namespace holoscan::ops {
 template <typename sampleType>
 void DigitalRFSink<sampleType>::setup(OperatorSpec& spec) {
   spec.input<std::shared_ptr<RFArray<sampleType>>>("rf_in");
-  spec.param<std::string>(channel_dir,
-                          "channel_dir",
-                          "Channel directory",
-                          "Directory for writing the Digital RF channel",
-                          {});
+  spec.param<std::string>(
+      output_path, "output_path", "Output path", "Parent directory for writing output files", ".");
+  spec.param<std::string>(
+      channel_dir,
+      "channel_dir",
+      "Channel directory",
+      "Channel directory under `output_path` where the Digital RF channel is to be written",
+      {});
   spec.param<uint64_t>(subdir_cadence_secs,
                        "subdir_cadence_secs",
                        "Subdirectory cadence",
@@ -94,7 +97,7 @@ void DigitalRFSink<sampleType>::initialize() {
   _h5type_initialize();
 
   // make sure the channel directory exists
-  channel_dir_path = channel_dir.get();
+  channel_dir_path = std::filesystem::path(output_path.get()) / channel_dir.get();
   std::filesystem::create_directories(channel_dir_path);
 
   HOLOSCAN_LOG_INFO("DigitalRFSink::initialize() done");

@@ -27,8 +27,10 @@ __all__ = ["DigitalMetadataSinkParams"]
 class DigitalMetadataSinkParams:
     """Digital Metadata Sink parameters"""
 
-    metadata_dir: os.PathLike
-    """The directory where the metadata channel is to be written"""
+    metadata_dir: str
+    """Channel directory under `output_path` where the metadata channel is to be written"""
+    output_path: Optional[os.PathLike] = "."
+    """Parent directory for writing output files"""
     subdir_cadence_secs: PositiveInt = 3600
     """Subdirectory cadence in number of seconds"""
     file_cadence_secs: PositiveInt = 1

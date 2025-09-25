@@ -41,8 +41,10 @@ chunk_size : int
     Number of samples to operate on in one chunk.
 num_subchannels : int
     Number of IQ subchannels per sample time instance.
-channel_dir : pathlib.Path or str
-    Directory for writing the Digital RF channel.
+output_path : os.PathLike
+    Parent directory for writing output files.
+channel_dir : str
+    Channel directory under `output_path` where the Digital RF channel is to be written.
 subdir_cadence_secs : int, optional
     Subdirectory cadence in number of seconds.
 file_cadence_millisecs : int, optional

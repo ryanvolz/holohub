@@ -48,6 +48,7 @@ class DigitalRFSink : public Operator {
 
   Parameter<uint32_t> chunk_size;
   Parameter<uint16_t> num_subchannels;
+  Parameter<std::string> output_path;
   Parameter<std::string> channel_dir;
   Parameter<uint64_t> subdir_cadence_secs;
   Parameter<uint64_t> file_cadence_millisecs;

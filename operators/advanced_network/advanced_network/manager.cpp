@@ -141,7 +141,8 @@ Status Manager::allocate_memory_regions() {
 
           cudaSetDevice(mr.second.affinity_);
           cudaFree(0);  // Create primary context if it doesn't exist
-          const auto alloc_res = cuMemAlloc(&cuptr, align);
+          const auto alloc_res =
+              cuMemHostAlloc(&ptr, align + GPU_PAGE_SIZE, CU_MEMHOSTALLOC_DEVICEMAP);
 
           if (alloc_res != CUDA_SUCCESS) {
             const char* err_str = nullptr;
@@ -152,6 +153,17 @@ Status Manager::allocate_memory_regions() {
             return Status::NULL_PTR;
           }
 
+          const auto devptr_res = cuMemHostGetDevicePointer(&cuptr, ptr, 0);
+          if (devptr_res != CUDA_SUCCESS) {
+            const char* err_str = nullptr;
+            cuGetErrorString(alloc_res, &err_str);
+            HOLOSCAN_LOG_CRITICAL(
+                "Could not get device pointer corresponding to host pointer {}. Error: {}",
+                ptr,
+                err_str);
+            return Status::NULL_PTR;
+          }
+
           ptr = reinterpret_cast<void*>(cuptr);
 
           const auto attr_res =
@@ -159,6 +171,11 @@ Status Manager::allocate_memory_regions() {
           if (attr_res != CUDA_SUCCESS) {
             HOLOSCAN_LOG_CRITICAL("Could not set pointer attributes");
             return Status::NULL_PTR;
+          }
+
+          /* Align memory address */
+          if (RTE_PTR_ALIGN(ptr, GPU_PAGE_SIZE) != ptr) {
+            ptr = RTE_PTR_ALIGN(ptr, GPU_PAGE_SIZE);
           }
           break;
         }

@@ -13,6 +13,7 @@ env:
   BUILD_CUDA_KEYRING: https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/arm64/cuda-keyring_1.1-1_all.deb
   DOCKER_REGISTRY: ghcr.io
   HOLOSCAN_VERSION: 3.4.0
+  DOCA_VERSION: 2.8.0
 
 jobs:
   build_holoscan_rf_array_deb:
@@ -25,6 +26,13 @@ jobs:
         run: |
           wget ${{ env.BUILD_CUDA_KEYRING }}
           sudo dpkg -i cuda-keyring_*.deb
+          sudo apt-get update
+      - name: Set up DOCA DEB repo
+        run: |
+          export BASE_URL="https://linux.mellanox.com/public/repo/doca"
+          export DOCA_URL="$BASE_URL/${{ env.DOCA_VERSION }}/ubuntu22.04/arm64-sbsa/"
+          curl $BASE_URL/GPG-KEY-Mellanox.pub | gpg --dearmor | sudo tee /etc/apt/trusted.gpg.d/GPG-KEY-Mellanox.pub
+          echo "deb [signed-by=/etc/apt/trusted.gpg.d/GPG-KEY-Mellanox.pub] $DOCA_URL ./" | sudo tee /etc/apt/sources.list.d/doca.list
           sudo apt-get update
       - name: Install dependencies
         run: |

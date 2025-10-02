@@ -98,6 +98,8 @@ LABEL org.opencontainers.image.description="Holoscan RF array operators"
 ARG DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
+    curl \
+    gpg \
     libnuma1 \
     python3-pip \
     && rm -rf /var/lib/apt/lists/* \
@@ -110,6 +112,28 @@ ARG JETPACK_RELEASE=r36.4
 ADD --chmod=664 https://repo.download.nvidia.com/jetson/jetson-ota-public.asc /etc/apt/trusted.gpg.d/
 ADD --chmod=664 https://repo.download.nvidia.com/jetson/nvidia-repo-pin-600 /etc/apt/preferences.d/
 RUN echo "deb https://repo.download.nvidia.com/jetson/common ${JETPACK_RELEASE} main" >> /etc/apt/sources.list.d/nvidia-l4t-apt-source.list
+
+#
+# Setup DOCA APT repository
+#
+# (version is what was used for the holoscan version that we are using)
+ARG DOCA_VERSION=2.8.0
+RUN DOCA_ARCH=$(uname -m); \
+    if [ "${DOCA_ARCH}" = "aarch64" ]; then \
+        DOCA_ARCH="arm64-sbsa"; \
+    fi \
+    && DOCA_REPO_ROOT="https://linux.mellanox.com/public/repo/doca" \
+    && DOCA_HOSTNAME=$(echo "${DOCA_REPO_ROOT}" | sed 's|https://\([^/]*\).*|\1|') \
+    && DISTRO=$(. /etc/os-release && echo "$ID$VERSION_ID") \
+    && DOCA_URL="${DOCA_REPO_ROOT}/${DOCA_VERSION}/${DISTRO}/${DOCA_ARCH}/" \
+    && DOCA_GPG_KEY="GPG-KEY-Mellanox.pub" \
+    && DOCA_GPG_KEY_PATH="/etc/apt/trusted.gpg.d/${DOCA_GPG_KEY}" \
+    && curl -fsSL ${DOCA_URL}/${DOCA_GPG_KEY} | gpg --dearmor -o ${DOCA_GPG_KEY_PATH} \
+    && echo "deb [signed-by=${DOCA_GPG_KEY_PATH}] ${DOCA_URL} ./" \
+        > /etc/apt/sources.list.d/doca.list \
+    && DOCA_HOSTNAME=$(echo "${DOCA_REPO_ROOT}" | sed 's|https://\([^/]*\).*|\1|') \
+    && echo "Package: *\nPin: origin \"${DOCA_HOSTNAME}\"\nPin-Priority: 800" \
+        > /etc/apt/preferences.d/doca-pin
 
 #
 # Install rf-array dependencies and needed cuda stuff

@@ -25,7 +25,7 @@ __all__ = ["NetConnectorAdvancedParams"]
 class SpoofedHeaderMetadata:
     start_sample_idx: NonNegativeInt = 0
     """Sample index for start of data"""
-    sample_rate_numerator: PositiveInt = 64000000
+    sample_rate_numerator: PositiveInt = 2000000
     """Numerator of sample rate in Hz"""
     sample_rate_denominator: PositiveInt = 1
     """Denominator of sample rate in Hz"""
@@ -45,9 +45,9 @@ class SpoofedHeaderMetadata:
 class NetConnectorAdvancedParams:
     """Advanced net connector parameters"""
 
-    buffer_size: PositiveInt = 10
+    buffer_size: PositiveInt = 4
     """Max number of num_samples batches that can be held at once"""
-    num_samples: PositiveInt = 12800000
+    num_samples: PositiveInt = 400000
     """Number of samples per output chunk"""
     num_subchannels: PositiveInt = 1
     """Number of IQ subchannels per sample time instance"""
@@ -63,7 +63,7 @@ class NetConnectorAdvancedParams:
     """Whether or not to take the complex conjugate of the RF data (i.e. invert spectrum)"""
     spoof_header: bool = False
     """Whether or not to ignore the packet header and spoof its metadata"""
-    packet_skip_bytes: NonNegativeInt = 0
+    packet_skip_bytes: NonNegativeInt = 64
     """If spoofing packet header, number of bytes to skip at the beginning of each
     packet before reading data
     """
@@ -74,12 +74,16 @@ class NetConnectorAdvancedParams:
     since it varies per packet, but you can instead specify the ``start_sample_idx``
     to give the sample index of the first sample in the first packet
     """
-    batch_size: PositiveInt = 6250
+    batch_size: PositiveInt = 625
     """Batch size in packets for each processing epoch"""
-    max_packet_size: PositiveInt = 8256
+    max_packet_size: PositiveInt = 9000
     """Maximum packet size (not including network protocol headers) expected from sender"""
-    batch_capacity: PositiveInt = 4
+    batch_capacity: PositiveInt = 5
     """Input buffer capacity in number of network packet batches"""
+    interface_name: str = "rx_port"
+    """Name of the interface to use from the advanced_network config"""
+    queue_id: int = 0
+    """ID of the queue from the advanced_network config to process"""
     gpu_direct: bool = True
     """Whether GPUDirect is enabled for the advanced network operator"""
     use_header_data_split: bool = True

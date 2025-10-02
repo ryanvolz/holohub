@@ -496,9 +496,6 @@ void NetConnectorAdvanced::compute(InputContext& op_input, OutputContext& op_out
 }
 
 void NetConnectorAdvanced::stop() {
-  holoscan::advanced_network::shutdown();
-  holoscan::advanced_network::print_stats();
-
   HOLOSCAN_LOG_INFO(
       "\n"
       "NetConnectorAdvanced exit report:\n"

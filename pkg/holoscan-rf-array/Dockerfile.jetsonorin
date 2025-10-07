@@ -14,110 +14,106 @@
 # limitations under the License.
 
 #
-# Derived from:
-#   https://gitlab.com/nvidia/container-images/l4t-jetpack/-/blob/master/Dockerfile.jetpack_6
+# Modeled after:
+#   https://github.com/nvidia-holoscan/holoscan-sdk/blob/main/Dockerfile
 #
 
-#################################################################
-# Build Stage
-#################################################################
-
-ARG GPU_TYPE=igpu
+############################################################
+# Versions
+############################################################
+ARG CUDA_VERSION=12.2
+ARG DOCA_VERSION=2.8.0
 ARG HOLOSCAN_VERSION=3.2.0
-ARG HOLOSCAN_BASE_IMAGE=nvcr.io/nvidia/clara-holoscan/holoscan:v${HOLOSCAN_VERSION}-${GPU_TYPE}
-FROM ${HOLOSCAN_BASE_IMAGE} AS build
+ARG JETSON_LINUX_VERSION=36.4
 
+############################################################
+# Base image
+############################################################
+
+ARG BASE_IMAGE=nvcr.io/nvidia/base/ubuntu:22.04_20240212
+FROM ${BASE_IMAGE} AS base
+
+# Set bash as the default shell
+SHELL ["/bin/bash", "-c"]
+
+# Conditionally configure apt caching behavior
+ARG ENABLE_APT_CACHING=true
+RUN if [ "${ENABLE_APT_CACHING}" = "true" ]; then \
+        echo "APT Caching enabled: Disabling docker-clean and enabling Keep-Downloaded-Packages."; \
+        DOCKER_CLEAN_CONF="/etc/apt/apt.conf.d/docker-clean"; \
+        if [ -f "${DOCKER_CLEAN_CONF}" ]; then \
+            mv "${DOCKER_CLEAN_CONF}" "${DOCKER_CLEAN_CONF}.disabled"; \
+        fi; \
+        echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/99-keep-archives; \
+    else \
+        echo "APT Caching disabled: Adding extra Post-Invoke cleanup hook."; \
+        echo 'DPkg::Post-Invoke "rm -f /var/cache/apt/archives/*.deb /var/cache/apt/archives/partial/*.deb /var/cache/apt/*.bin /var/lib/apt/lists/* || true";' > /etc/apt/apt.conf.d/99-custom-cleanup; \
+    fi
+
+# Install basic tools
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && apt-get install --no-install-recommends -y \
+        ca-certificates \
+        curl \
+        patch \
+        gpg \
+        nano \
+        unzip
+
+# To inform users about deleted libraries
+COPY  --chmod=755 <<'EOF' /usr/local/bin/cleanup_unwanted_libs
+#!/bin/bash
+DELETED_LIBS_LOG="/var/log/holoscan-deleted-libs.log"
+DELETED_LIB_MSG="This file was deleted to optimize the size of the holoscan container (saved %s).
+If you need this library, re-install it with: 'apt-get install --reinstall %s'.
+The full list of deleted libraries is recorded in '${DELETED_LIBS_LOG}'."
+for pattern in "$@"; do
+    for file in $pattern; do
+        if [ -f "${file}" ] && [ ! -L "${file}" ]; then
+            lib_size=$(stat -c %s "${file}")
+            lib_size_human=$(numfmt --to=iec --suffix=B ${lib_size})
+            pkg=$(dpkg -S "${file}" 2>/dev/null | cut -d: -f1 || echo 'unknown')
+            echo "${pkg} ${file} ${lib_size} ${lib_size_human}" | tee -a "${DELETED_LIBS_LOG}"
+            printf "${DELETED_LIB_MSG}" "${lib_size_human}" "${pkg}" > "${file}"
+        fi
+    done
+done
+EOF
+
+# Common variables
 ARG DEBIAN_FRONTEND=noninteractive
+ENV NVIDIA_DRIVER_CAPABILITIES=all
+ENV NVIDIA_VISIBLE_DEVICES=all
 
-#
-# Configure cmake repo
-#
-ADD --chmod=664 https://apt.kitware.com/keys/kitware-archive-latest.asc /etc/apt/trusted.gpg.d/
-RUN echo "deb https://apt.kitware.com/ubuntu/ $(cat /etc/os-release | grep -Po '^UBUNTU_CODENAME=\K[^ ]*') main" >> /etc/apt/sources.list.d/kitware.list
+############################################################
+# APT repository configs
+############################################################
+FROM base AS apt-repo-config
 
-# workaround for dpkg-shlibdeps needing to locate libcuda.so.1 and assign it to a package for dependency generation
-RUN ln -s /usr/local/cuda/targets/aarch64-linux/lib/stubs/libcuda.so /usr/lib/libcuda.so.1
-
-#
-# Install dependencies
-#
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        cmake=3.26.* \
-        cmake-data=3.26.* \
-        file \
-        libhdf5-dev \
-    && rm /usr/local/bin/cmake /usr/local/bin/cpack
-
-#
-# Build other dependencies
-#
-RUN apt-get install -y --no-install-recommends \
-        libbpf-dev \
-        libelf-dev \
-        libibverbs-dev \
-        libpcap0.8-dev \
-        libssl-dev \
-        meson \
-        pkgconf \
-        python3-pyelftools \
-        zlib1g
-ADD https://github.com/ryanvolz/dpdk-stable.git#24.11-jetson /dpdk
-WORKDIR /dpdk
-RUN meson build \
-        -Dc_args=-I/usr/local/cuda/include \
-        -Dplatform=jetsonorin \
-        -Dexamples=ethtool \
-        -Ddisable_drivers=baseband/*,bus/ifpga/*,common/cpt,common/cnxk,common/dpaax,common/iavf,common/octeontx,common/octeontx2,crypto/nitrox,event/cnxk,net/ark,net/atlantic,net/avp,net/axgbe,net/bnx2x,net/bnxt,net/cnxk,net/cxgbe,net/e1000,net/ena,net/enic,net/fm10k,net/hinic,net/hns3,net/i40e,vdpa/ifc,net/igc,net/liquidio,net/netvsc,net/nfp,net/qede,net/sfc,net/thunderx,net/vdev_netvsc,net/vmxnet3,regex/octeontx2 \
-    && ninja -C build \
-    && ninja -C build install \
-    && ldconfig
-
-#
-# Build holoscan-rf-array
-ARG BUILD_CUDA_ARCHITECTURES=87
-WORKDIR /holohub
-COPY . .
-ENV HOLOHUB_CMAKE_ARGS="-DCMAKE_CUDA_ARCHITECTURES=${BUILD_CUDA_ARCHITECTURES} -DCMAKE_VERBOSE_MAKEFILE=ON -DANO_MGR='dpdk' -DHOLOHUB_DOWNLOAD_DATASETS=OFF"
-
-RUN ./run build holoscan-rf-array --buildpath build \
-    --configure-args "${HOLOHUB_CMAKE_ARGS}" \
-    --type release \
-    --parallel 4
-
-#################################################################
-# Runtime Image Stage
-#################################################################
-
-FROM nvcr.io/nvidia/base/ubuntu:22.04_20240212 AS run
-
-LABEL org.opencontainers.image.description="Holoscan RF array operators"
-
-#
-# Install any utils needed for execution
-#
-ARG DEBIAN_FRONTEND=noninteractive
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates \
-    curl \
-    gpg \
-    libnuma1 \
-    python3-pip \
-    && rm -rf /var/lib/apt/lists/* \
-    && apt-get clean
-
-#
-# Configure nvidia apt repo
-#
-ARG JETPACK_RELEASE=r36.4
+# Configure nvidia Jetson apt repo
+ARG JETSON_LINUX_VERSION
 ADD --chmod=664 https://repo.download.nvidia.com/jetson/jetson-ota-public.asc /etc/apt/trusted.gpg.d/
 ADD --chmod=664 https://repo.download.nvidia.com/jetson/nvidia-repo-pin-600 /etc/apt/preferences.d/
-RUN echo "deb https://repo.download.nvidia.com/jetson/common ${JETPACK_RELEASE} main" >> /etc/apt/sources.list.d/nvidia-l4t-apt-source.list
+RUN L4T_APT_BRANCH="r${JETSON_LINUX_VERSION}" \
+    && echo "deb https://repo.download.nvidia.com/jetson/common ${L4T_APT_BRANCH} main" >> /etc/apt/sources.list.d/nvidia-l4t-apt-source.list
 
-#
+# CUDA for Jetson repo
+ARG CUDA_VERSION
+# (e.g. https://developer.nvidia.com/cuda-12-2-2-download-archive)
+RUN if [ "$(printf '%s\n' "12.2" "${CUDA_VERSION}" | sort -V | head -n1)" = "${CUDA_VERSION}" ]; then \
+        # less than or equal to 12.2
+        CUDA_REPO_URL="https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/arm64"; \
+    else \
+        CUDA_REPO_URL="https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/arm64"; \
+    fi \
+    && curl -fsSL -o cuda-keyring.deb "${CUDA_REPO_URL}/cuda-keyring_1.1-1_all.deb" \
+    && dpkg -i cuda-keyring.deb \
+    && rm cuda-keyring.deb
+
 # Setup DOCA APT repository
-#
 # (version is what was used for the holoscan version that we are using)
-ARG DOCA_VERSION=2.8.0
+ARG DOCA_VERSION
 RUN DOCA_ARCH=$(uname -m); \
     if [ "${DOCA_ARCH}" = "aarch64" ]; then \
         DOCA_ARCH="arm64-sbsa"; \
@@ -135,40 +131,196 @@ RUN DOCA_ARCH=$(uname -m); \
     && echo "Package: *\nPin: origin \"${DOCA_HOSTNAME}\"\nPin-Priority: 800" \
         > /etc/apt/preferences.d/doca-pin
 
-#
-# Install rf-array dependencies and needed cuda stuff
-# (do this before holoscan because it shouldn't change as often)
-#
+############################################################
+# Build tools
+############################################################
+FROM base AS build-tools
+
+# Install build tools
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    OS_CODENAME=$(. /etc/os-release && echo "$VERSION_CODENAME") \
+    && KW_KEYRING="/usr/share/keyrings/kitware-archive-keyring.gpg" \
+    && curl -fsSL "https://apt.kitware.com/keys/kitware-archive-latest.asc" \
+        | gpg --dearmor -o "$KW_KEYRING" \
+    && echo "deb [signed-by=$KW_KEYRING] https://apt.kitware.com/ubuntu/ $OS_CODENAME main" \
+        > /etc/apt/sources.list.d/kitware.list \
+    && apt-get update \
+    && rm "$KW_KEYRING" \
+    && apt-get install --no-install-recommends -y \
+        kitware-archive-keyring \
+        cmake="3.26.*" \
+        cmake-data="3.26.*" \
+        build-essential \
+        file \
+        patchelf \
+        ninja-build \
+        git
+
+# - This variable is consumed by all dependencies below as an environment variable (CMake 3.22+)
+# - We use ARG to only set it at docker build time, so it does not affect cmake builds
+#   performed at docker run time in case users want to use a different BUILD_TYPE
+ARG CMAKE_BUILD_TYPE=Release
+
+#################################################################
+# Build Stage
+#################################################################
+FROM build-tools AS build
+
+# Setup apt repositories
+COPY --from=apt-repo-config /etc/apt/keyrings/ /etc/apt/keyrings/
+COPY --from=apt-repo-config /etc/apt/sources.list.d/ /etc/apt/sources.list.d/
+COPY --from=apt-repo-config /etc/apt/preferences.d/ /etc/apt/preferences.d/
+COPY --from=apt-repo-config /etc/apt/trusted.gpg.d/ /etc/apt/trusted.gpg.d/
+COPY --from=apt-repo-config /usr/share/keyrings/ /usr/share/keyrings/
+
+# Install dependencies
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update \
+    && apt-get install -y --no-install-recommends \
+        libhdf5-dev \
+        pybind11-dev \
+        python3-dev
+
+ARG CUDA_VERSION
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update \
+    && CUDA_VERSION_STRING=$(echo ${CUDA_VERSION} | cut -d. -f1-2 --output-delimiter="-") \
+    && apt-get install -y --no-install-recommends \
+        cuda-cudart-dev-${CUDA_VERSION_STRING} \
+        cuda-driver-dev-${CUDA_VERSION_STRING} \
+        cuda-nvrtc-dev-${CUDA_VERSION_STRING} \
+        cuda-nvcc-${CUDA_VERSION_STRING} \
+        libcublas-dev-${CUDA_VERSION_STRING} \
+        libcufft-dev-${CUDA_VERSION_STRING} \
+        libcurand-dev-${CUDA_VERSION_STRING} \
+        libcusolver-dev-${CUDA_VERSION_STRING} \
+        libcusparse-dev-${CUDA_VERSION_STRING} \
+        libnvjitlink-dev-${CUDA_VERSION_STRING}
+
 ARG HOLOSCAN_VERSION
-ARG CUDA_VERSION_STRING=12-6
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    holoscan=${HOLOSCAN_VERSION}* \
-    python3-numpy \
-    python3-scipy \
-    cuda-nvrtc-${CUDA_VERSION_STRING} \
-    libcublas-${CUDA_VERSION_STRING} \
-    libcufft-${CUDA_VERSION_STRING} \
-    libcurand-${CUDA_VERSION_STRING} \
-    libcusolver-${CUDA_VERSION_STRING} \
-    libnvjitlink-${CUDA_VERSION_STRING} \
-    ibverbs-providers \
-    libbpf0 \
-    libelf1 \
-    libibverbs1 \
-    libnuma1 \
-    libpcap0.8 \
-    libssl3 \
-    zlib1g \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update \
+    && CUDA_VERSION_STRING=$(echo ${CUDA_VERSION} | cut -d. -f1-2 --output-delimiter="-") \
+    && apt-get install -y --no-install-recommends \
+        holoscan=${HOLOSCAN_VERSION}*
+
+# workaround for dpkg-shlibdeps needing to locate libcuda.so.1 and assign it to a package for dependency generation
+RUN ln -s /usr/local/cuda/targets/aarch64-linux/lib/stubs/libcuda.so /usr/lib/libcuda.so.1
+
+# Workaround for holoscan package not having Python headers
+# Clone the source from git and copy the headers over
+ADD https://github.com/nvidia-holoscan/holoscan-sdk.git#v${HOLOSCAN_VERSION}:python/holoscan/core /opt/nvidia/holoscan/include/holoscan/python/core
+
+# Build other dependencies
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get install -y --no-install-recommends \
+        libbpf-dev \
+        libelf-dev \
+        libibverbs-dev \
+        libnuma-dev \
+        libpcap0.8-dev \
+        libssl-dev \
+        meson \
+        pkgconf \
+        python3-pyelftools \
+        zlib1g
+ADD https://github.com/ryanvolz/dpdk-stable.git#24.11-jetson /dpdk
+WORKDIR /dpdk
+RUN meson build \
+        -Dc_args=-I/usr/local/cuda/include \
+        -Dplatform=jetsonorin \
+        -Dexamples=ethtool \
+        -Ddisable_drivers=baseband/*,bus/ifpga/*,common/cpt,common/cnxk,common/dpaax,common/iavf,common/octeontx,common/octeontx2,crypto/nitrox,event/cnxk,net/ark,net/atlantic,net/avp,net/axgbe,net/bnx2x,net/bnxt,net/cnxk,net/cxgbe,net/e1000,net/ena,net/enic,net/fm10k,net/hinic,net/hns3,net/i40e,vdpa/ifc,net/igc,net/liquidio,net/netvsc,net/nfp,net/qede,net/sfc,net/thunderx,net/vdev_netvsc,net/vmxnet3,regex/octeontx2 \
+    && ninja -C build \
+    && ninja -C build install \
+    && ldconfig
+
+# Build holoscan-rf-array
+ARG BUILD_CUDA_ARCHITECTURES=87
+WORKDIR /holohub
+COPY . .
+ENV HOLOHUB_CMAKE_ARGS="-DCMAKE_CUDA_ARCHITECTURES=${BUILD_CUDA_ARCHITECTURES} -DCMAKE_VERBOSE_MAKEFILE=ON -DANO_MGR='dpdk' -DHOLOHUB_DOWNLOAD_DATASETS=OFF"
+
+RUN ./run build holoscan-rf-array --buildpath build \
+    --configure-args "${HOLOHUB_CMAKE_ARGS}" \
+    --type release \
+    --parallel 4
+
+#################################################################
+# Runtime Image Stage
+#################################################################
+
+FROM base AS run
+
+LABEL org.opencontainers.image.description="Holoscan RF array operators"
+
+# Setup apt repositories
+COPY --from=apt-repo-config /etc/apt/keyrings/ /etc/apt/keyrings/
+COPY --from=apt-repo-config /etc/apt/sources.list.d/ /etc/apt/sources.list.d/
+COPY --from=apt-repo-config /etc/apt/preferences.d/ /etc/apt/preferences.d/
+COPY --from=apt-repo-config /etc/apt/trusted.gpg.d/ /etc/apt/trusted.gpg.d/
+COPY --from=apt-repo-config /usr/share/keyrings/ /usr/share/keyrings/
+
+# Install any utils needed for execution
+ARG DEBIAN_FRONTEND=noninteractive
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends \
+        python3-pip
+
+# Install rf-array dependencies
+# (do this before rf-array because it shouldn't change as often
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ibverbs-providers \
+        libbpf0 \
+        libelf1 \
+        libibverbs1 \
+        libnuma1 \
+        libpcap0.8 \
+        libssl3 \
+        zlib1g
+
+# Install cuda stuff
+ARG CUDA_VERSION
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update \
+    && CUDA_VERSION_STRING=$(echo ${CUDA_VERSION} | cut -d. -f1-2 --output-delimiter="-") \
+    && apt-get install -y --no-install-recommends \
+        cuda-cudart-dev-${CUDA_VERSION_STRING} \
+        cuda-nvrtc-dev-${CUDA_VERSION_STRING} \
+        cuda-nvcc-${CUDA_VERSION_STRING} \
+        libcublas-${CUDA_VERSION_STRING} \
+        libcufft-${CUDA_VERSION_STRING} \
+        libcurand-${CUDA_VERSION_STRING} \
+        libcusolver-${CUDA_VERSION_STRING} \
+        libnvjitlink-${CUDA_VERSION_STRING} \
     && apt-get download cuda-compat-${CUDA_VERSION_STRING} \
     && dpkg-deb -R ./cuda-compat-${CUDA_VERSION_STRING}_*_arm64.deb ./cuda-compat \
     && cp -r ./cuda-compat/usr/local/* /usr/local/ \
     && rm -rf ./cuda-compat-${CUDA_VERSION_STRING}_*_arm64.deb ./cuda-compat \
-    && rm -rf /var/lib/apt/lists/* \
-    && apt-get clean
+    && echo "-- Deleting unused static libs:" \
+    && packages=$(dpkg -l | grep -e cuda -e cublas -e cufft -e curand -e cusolver -e nvjitlink | awk '{print $2}') \
+    && static_libs=$(dpkg -L $packages | grep '\.a$' || true) \
+    && cleanup_unwanted_libs $static_libs
 
-#
+ARG HOLOSCAN_VERSION
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update \
+    && CUDA_VERSION_STRING=$(echo ${CUDA_VERSION} | cut -d. -f1-2 --output-delimiter="-") \
+    && apt-get install -y --no-install-recommends \
+        holoscan=${HOLOSCAN_VERSION}*
+
 # Install Python dependencies not covered by deb packages
-#
 RUN python3 -m pip install --no-cache-dir holoscan==${HOLOSCAN_VERSION} numpy==1.26 cupy-cuda12x scipy==1.15
 
 #
@@ -179,27 +331,20 @@ RUN --mount=type=bind,from=build,source=/usr/local/lib/aarch64-linux-gnu,target=
     mkdir -p /usr/local/lib/aarch64-linux-gnu \
     && cp -a /build/lib/librte_* /build/lib/dpdk /usr/local/lib/aarch64-linux-gnu
 
-#
 # Install holoscan-rf-array
-#
 ARG RF_ARRAY_PACKAGE=holoscan-rf-array_*.deb
-RUN --mount=type=bind,from=build,target=/tmp/build-stage \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    --mount=type=bind,from=build,target=/tmp/build-stage \
     apt-get update \
     && dpkg --unpack /tmp/build-stage/holohub/${RF_ARRAY_PACKAGE} \
-    && apt-get install -f -y --no-install-recommends \
-    && rm -rf /var/lib/apt/lists/* \
-    && apt-get clean
+    && apt-get install -f -y --no-install-recommends
 
 RUN ldconfig
 
-#
 # Set up environment variables
-#
 ENV CUDA_HOME="/usr/local/cuda"
 ENV PATH="/usr/local/cuda/bin:${PATH}"
 ENV LD_LIBRARY_PATH="/usr/local/cuda/lib64"
-
-ENV NVIDIA_VISIBLE_DEVICES="all"
-ENV NVIDIA_DRIVER_CAPABILITIES="all"
 
 ENV PYTHONPATH="/opt/nvidia/holoscan/python/lib"

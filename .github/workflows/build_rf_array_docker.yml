@@ -13,11 +13,11 @@ env:
   DOCKER_REGISTRY: ghcr.io
   IMAGE_DOCKERFILE: pkg/holoscan-rf-array/Dockerfile.jetsonorin
   IMAGE_NAME: ${{ github.repository }}/rf-array
-  HOLOSCAN_VERSION: "3.2.0"
-  GPU_TYPE: igpu
   BUILD_CUDA_ARCHITECTURES: "87"
-  JETPACK_RELEASE: r36.4
-  CUDA_VERSION_STRING: 12-6
+  CUDA_VERSION: "12.2"
+  DOCA_VERSION: "2.8.0"
+  HOLOSCAN_VERSION: "3.2.0"
+  JETSON_LINUX_VERSION: "36.4"
 
 jobs:
   build_docker_image:
@@ -69,11 +69,11 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
-            HOLOSCAN_VERSION=${{ env.HOLOSCAN_VERSION }}
-            GPU_TYPE=${{ env.GPU_TYPE }}
             BUILD_CUDA_ARCHITECTURES=${{ env.BUILD_CUDA_ARCHITECTURES }}
-            JETPACK_RELEASE=${{ env.JETPACK_RELEASE }}
-            CUDA_VERSION_STRING=${{ env.CUDA_VERSION_STRING }}
+            CUDA_VERSION=${{ env.CUDA_VERSION }}
+            DOCA_VERSION=${{ env.DOCA_VERSION }}
+            HOLOSCAN_VERSION=${{ env.HOLOSCAN_VERSION }}
+            JETSON_LINUX_VERSION=${{ env.JETSON_LINUX_VERSION }}
       - name: Generate artifact attestation
         uses: actions/attest-build-provenance@v2
         with:

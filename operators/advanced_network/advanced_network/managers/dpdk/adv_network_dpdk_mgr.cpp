@@ -419,9 +419,7 @@ void DpdkMgr::initialize() {
 
   for (const auto& name : ifs) {
     strncpy(_argv[arg++], "-a", max_arg_size - 1);
-    strncpy(_argv[arg++],
-            (name + std::string(",txq_inline_max=0,dv_flow_en=2")).c_str(),
-            max_arg_size - 1);
+    strncpy(_argv[arg++], name.c_str(), max_arg_size - 1);
   }
 
   _argv[arg] = nullptr;

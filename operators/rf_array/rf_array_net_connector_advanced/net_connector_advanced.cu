@@ -443,7 +443,14 @@ void NetConnectorAdvanced::compute(InputContext& op_input, OutputContext& op_out
           free_bufs_and_queue_arrays(op_output, op_stream);
           if (out_q.size() >= batch_capacity_.get()) {
             HOLOSCAN_LOG_ERROR("Fell behind in processing on GPU!");
-            cudaStreamSynchronize(streams_[cur_idx]);
+            const auto first_msg = out_q.front();
+            if (cudaStreamSynchronize(first_msg.stream) != cudaSuccess) {
+              HOLOSCAN_LOG_ERROR(
+                  "Failed to synchronize to next stream for placing packet data. Ending with "
+                  "error:");
+              HOLOSCAN_LOG_ERROR(cudaGetErrorString(cudaGetLastError()));
+              exit(1);
+            }
           }
         } while (out_q.size() >= batch_capacity_.get());
 

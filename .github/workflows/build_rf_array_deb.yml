@@ -13,7 +13,7 @@ env:
   BUILD_CUDA_KEYRING: https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/arm64/cuda-keyring_1.1-1_all.deb
   DOCKER_REGISTRY: ghcr.io
   HOLOSCAN_VERSION: 3.4.0
-  DOCA_VERSION: 2.8.0
+  DOCA_VERSION: 2.9.3
 
 jobs:
   build_holoscan_rf_array_deb:

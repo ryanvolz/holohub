@@ -15,7 +15,7 @@ env:
   IMAGE_NAME: ${{ github.repository }}/rf-array
   BUILD_CUDA_ARCHITECTURES: "87"
   CUDA_VERSION: "12.2"
-  DOCA_VERSION: "2.8.0"
+  DOCA_VERSION: "2.9.3"
   HOLOSCAN_VERSION: "3.2.0"
   JETSON_LINUX_VERSION: "36.4"
 

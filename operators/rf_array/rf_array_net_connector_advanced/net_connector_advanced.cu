@@ -225,7 +225,10 @@ void NetConnectorAdvanced::initialize() {
                       0,
                       0,
                       streams_[n]);
-    cudaStreamSynchronize(streams_[n]);
+    if (cudaStreamSynchronize(streams_[n]) != cudaSuccess) {
+      HOLOSCAN_LOG_ERROR(cudaGetErrorString(cudaGetLastError()));
+      exit(1);
+    }
   }
 
   buffer_track = BufferTracking(buffer_size_.get());

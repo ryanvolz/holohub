@@ -91,7 +91,7 @@ class NetConnectorBasic : public Operator {
   matx::tensor_t<RFMetadata, 1> rf_metadata;
 
   // Spoofed packet header device memory structure
-  RFPacketHeader* spoof_header_d;
+  RFPacketHeader* spoof_header_d = nullptr;
 };  // NetConnectorBasic
 
 }  // namespace holoscan::ops

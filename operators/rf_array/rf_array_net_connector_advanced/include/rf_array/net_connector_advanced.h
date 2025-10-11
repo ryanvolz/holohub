@@ -99,7 +99,7 @@ class NetConnectorAdvanced : public Operator {
   matx::tensor_t<RFMetadata, 1> rf_metadata;
 
   // Spoofed packet header device memory structure
-  RFPacketHeader* spoof_header_d;
+  RFPacketHeader* spoof_header_d = nullptr;
 };  // NetConnectorAdvanced
 
 }  // namespace holoscan::ops

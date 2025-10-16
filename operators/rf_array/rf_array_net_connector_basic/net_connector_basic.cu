@@ -27,7 +27,9 @@ void NetConnectorBasic::setup(OperatorSpec& spec) {
   // in the `inputs` map and call `connector()` to add a kDoubleBuffer resource with capacity
   // set to the value of the batch_capacity parameter.
   spec.input<std::shared_ptr<NetworkOpBurstParams>>("burst_in");
-  spec.output<std::shared_ptr<RFArray<sample_t>>>("rf_out");
+  // No output condition so operator will always run when input is available,
+  // regardless of whether downstream operators keep up
+  spec.output<std::shared_ptr<RFArray<sample_t>>>("rf_out").condition(ConditionType::kNone);
 
   // Array settings
   spec.param<uint16_t>(buffer_size_,

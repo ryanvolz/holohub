@@ -25,11 +25,9 @@ using namespace holoscan::advanced_network;
 namespace holoscan::ops {
 
 void NetConnectorAdvanced::setup(OperatorSpec& spec) {
-  // We'd want to set the receiver connector capacity to match the batch_capacity parameter,
-  // but there's no good way to do that other than to do when creating the operator within
-  // an application. So when you use create NetConnectorBasic, add a DoubleBufferReceiver
-  // resource with capacity set to the value of the batch_capacity parameter.
-  spec.output<std::shared_ptr<RFArray<sample_t>>>("rf_out");
+  // No output condition so operator will always run when input is available,
+  // regardless of whether downstream operators keep up
+  spec.output<std::shared_ptr<RFArray<sample_t>>>("rf_out").condition(ConditionType::kNone);
 
   // Array settings
   spec.param<uint16_t>(buffer_size_,

@@ -22,7 +22,8 @@
 namespace holoscan::ops {
 
 void BasicNetworkOpRx::setup(OperatorSpec& spec) {
-  spec.output<std::shared_ptr<NetworkOpBurstParams>>("burst_out");
+  // No output condition so operator will always run regardless of whether downstream keeps up
+  spec.output<std::shared_ptr<NetworkOpBurstParams>>("burst_out").condition(ConditionType::kNone);
 
   spec.param<std::string>(ip_addr_, "ip_addr", "IP Address", "IP address of interface to bind to");
   spec.param<uint16_t>(port_, "dst_port", "L4 port ", "UDP or TCP port to listen on");

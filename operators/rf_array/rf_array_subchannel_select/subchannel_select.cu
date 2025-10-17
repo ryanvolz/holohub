@@ -61,6 +61,7 @@ void SubchannelSelect<sampleType>::compute(InputContext& op_input, OutputContext
   auto in_ptr_maybe = op_input.receive<std::shared_ptr<RFArray<sampleType>>>("rf_in");
   cudaStream_t stream = op_input.receive_cuda_stream("rf_in", true, false);
 
+  int num_emitted = 0;
   while (in_ptr_maybe) {
     auto in_ptr = in_ptr_maybe.value();
     auto out_tensor = matx::make_tensor<sampleType>(
@@ -69,6 +70,10 @@ void SubchannelSelect<sampleType>::compute(InputContext& op_input, OutputContext
 
     auto out_ptr = std::make_shared<RFArray<sampleType>>(out_tensor, in_ptr->metadata);
     op_output.emit(out_ptr, "rf_out");
+    num_emitted++;
+    if (num_emitted >= op_output.outputs()["rf_out"]->queue_size()) {
+      break;
+    }
 
     // see if we have another array on the receive buffer
     in_ptr_maybe = op_input.receive<std::shared_ptr<RFArray<sampleType>>>("rf_in");

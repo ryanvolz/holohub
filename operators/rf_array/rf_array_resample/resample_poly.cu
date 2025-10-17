@@ -100,6 +100,7 @@ void ResamplePoly::compute(InputContext& op_input, OutputContext& op_output, Exe
   auto in_ptr_maybe = op_input.receive<std::shared_ptr<RFArray<complex_t>>>("rf_in");
   cudaStream_t stream = op_input.receive_cuda_stream("rf_in", true, false);
 
+  int num_emitted = 0;
   while (in_ptr_maybe) {
     auto in_ptr = in_ptr_maybe.value();
     if (prior_input) {
@@ -157,10 +158,15 @@ void ResamplePoly::compute(InputContext& op_input, OutputContext& op_output, Exe
 
       auto out_ptr = std::make_shared<RFArray<complex_t>>(out_data, out_metadata);
       op_output.emit(out_ptr, "rf_out");
+      num_emitted++;
     }
 
     // set incoming input to prior input for next chunk
     prior_input = in_ptr;
+
+    if (num_emitted >= op_output.outputs()["rf_out"]->queue_size()) {
+      break;
+    }
 
     // see if we have another array on the receive buffer
     in_ptr_maybe = op_input.receive<std::shared_ptr<RFArray<complex_t>>>("rf_in");

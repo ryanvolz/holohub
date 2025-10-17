@@ -84,6 +84,7 @@ void RotatorScheduled::compute(InputContext& op_input, OutputContext& op_output,
   auto in_ptr_maybe = op_input.receive<std::shared_ptr<RFArray<complex_t>>>("rf_in");
   cudaStream_t stream = op_input.receive_cuda_stream("rf_in", true, false);
 
+  int num_emitted = 0;
   while (in_ptr_maybe) {
     auto in_ptr = in_ptr_maybe.value();
     // calculate center frequency and timestamp of the data chunk from metadata
@@ -185,6 +186,10 @@ void RotatorScheduled::compute(InputContext& op_input, OutputContext& op_output,
       op_output.emit(out_ptr, "rf_out");
     } else {
       op_output.emit(in_ptr, "rf_out");
+    }
+    num_emitted++;
+    if (num_emitted >= op_output.outputs()["rf_out"]->queue_size()) {
+      break;
     }
 
     // see if we have another array on the receive buffer

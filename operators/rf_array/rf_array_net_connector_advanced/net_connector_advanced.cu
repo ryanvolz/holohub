@@ -17,6 +17,7 @@
 #include "advanced_network/common.h"
 #include "advanced_network/types.h"
 #include "holoscan/holoscan.hpp"
+#include "holoscan/utils/cuda_macros.hpp"
 #include "rf_array/net_connector_advanced.h"
 #include "rf_array/net_connector_common.h"
 
@@ -471,15 +472,15 @@ void NetConnectorAdvanced::compute(InputContext& op_input, OutputContext& op_out
                           packet_skip_bytes_.get(),  // only needed if spoofing packets
                           streams_[cur_idx]);
         // Get updated buffer tracking information back to host
-        buffer_track.transfer(cudaMemcpyDeviceToHost, streams_[cur_idx]);
+        HOLOSCAN_CUDA_CALL(buffer_track.transfer(cudaMemcpyDeviceToHost, streams_[cur_idx]));
         // Get updated rf_metadata buffer back to host
-        cudaMemcpyAsync(rf_metadata_h,
-                        rf_metadata_d,
-                        buffer_size_.get() * sizeof(RFMetadata),
-                        cudaMemcpyDeviceToHost,
-                        streams_[cur_idx]);
+        HOLOSCAN_CUDA_CALL(cudaMemcpyAsync(rf_metadata_h,
+                                           rf_metadata_d,
+                                           buffer_size_.get() * sizeof(RFMetadata),
+                                           cudaMemcpyDeviceToHost,
+                                           streams_[cur_idx]));
 
-        cudaEventRecord(events_[cur_idx], streams_[cur_idx]);
+        HOLOSCAN_CUDA_CALL(cudaEventRecord(events_[cur_idx], streams_[cur_idx]));
         cur_msg_.stream = streams_[cur_idx];
         cur_msg_.evt = events_[cur_idx];
         out_q.push(cur_msg_);

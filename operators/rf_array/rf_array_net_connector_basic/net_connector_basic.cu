@@ -199,10 +199,8 @@ void NetConnectorBasic::initialize() {
   buffer_track = BufferTracking(buffer_size_.get());
   matx::make_tensor(rf_data, {buffer_size_.get(), num_samples_.get(), num_subchannels_.get()});
 
-  // allocate pinned, mapped memory for RFMetadata buffer that is accessible by both
-  // host and device, and get the host- and device-side pointers
-  cudaHostAlloc(&rf_metadata_h, buffer_size_.get() * sizeof(RFMetadata), cudaHostAllocMapped);
-  cudaHostGetDevicePointer(&rf_metadata_d, rf_metadata_h, 0);
+  cudaMallocHost(&rf_metadata_h, buffer_size_.get() * sizeof(RFMetadata));
+  cudaMalloc(&rf_metadata_d, buffer_size_.get() * sizeof(RFMetadata));
 
   auto cuda_err_status = cudaGetLastError();
   if (cuda_err_status != cudaSuccess) {
@@ -255,6 +253,7 @@ void NetConnectorBasic::check_completed_and_queue_arrays(OutputContext& op_outpu
   if (completed_msgs.empty()) {
     return;
   }
+  cudaStream_t completed_batch_stream = completed_msgs[0].stream;
 
   for (size_t i = 0; i < buffer_track.buffer_size; i++) {
     const size_t pos_wrap = (buffer_track.pos + i) % buffer_track.buffer_size;
@@ -290,7 +289,7 @@ void NetConnectorBasic::check_completed_and_queue_arrays(OutputContext& op_outpu
             buffer_track.received_end_h[j_pos_wrap]);
       }
     }
-    buffer_track.completed_at_pos(buffer_track.counter_h[pos_wrap]);
+    buffer_track.completed_at_pos(buffer_track.counter_h[pos_wrap], completed_batch_stream);
     HOLOSCAN_LOG_TRACE("Next sample cycle expected: {}", buffer_track.pos);
 
     break;
@@ -372,6 +371,14 @@ void NetConnectorBasic::compute(InputContext& op_input, OutputContext& op_output
                           ttl_pkts_recv_,            // only needed if spoofing packets
                           packet_skip_bytes_.get(),  // only needed if spoofing packets
                           streams_[cur_idx]);
+        // Get updated buffer tracking information back to host
+        buffer_track.transfer(cudaMemcpyDeviceToHost, streams_[cur_idx]);
+        // Get updated rf_metadata buffer back to host
+        cudaMemcpyAsync(rf_metadata_h,
+                        rf_metadata_d,
+                        buffer_size_.get() * sizeof(RFMetadata),
+                        cudaMemcpyDeviceToHost,
+                        streams_[cur_idx]);
 
         cudaEventRecord(events_[cur_idx], streams_[cur_idx]);
         cur_msg_.stream = streams_[cur_idx];

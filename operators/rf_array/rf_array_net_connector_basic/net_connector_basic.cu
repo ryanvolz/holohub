@@ -220,10 +220,11 @@ void NetConnectorBasic::freeResources() {
     if (streams_[n]) { cudaStreamDestroy(streams_[n]); }
     if (events_[n]) { cudaEventDestroy(events_[n]); }
   }
-  // rf_metadata_d points to same memory as rf_metadata_h, so freeing
-  // rf_metadata_h is sufficient
   if (rf_metadata_h) {
     cudaFreeHost(rf_metadata_h);
+  }
+  if (rf_metadata_d) {
+    cudaFree(rf_metadata_d);
   }
   if (spoof_header_d) { cudaFree(spoof_header_d); }
   HOLOSCAN_LOG_INFO("NetConnectorBasic::freeResources() complete");

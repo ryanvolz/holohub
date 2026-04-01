@@ -233,12 +233,10 @@ void NetConnectorAdvanced::initialize() {
   buffer_track = BufferTracking(buffer_size_.get());
   matx::make_tensor(rf_data, {buffer_size_.get(), num_samples_.get(), num_subchannels_.get()});
 
-  cudaMallocHost(&rf_metadata_h, buffer_size_.get() * sizeof(RFMetadata));
-  cudaMalloc(&rf_metadata_d, buffer_size_.get() * sizeof(RFMetadata));
+  HOLOSCAN_CUDA_CALL(cudaMallocHost(&rf_metadata_h, buffer_size_.get() * sizeof(RFMetadata)));
+  HOLOSCAN_CUDA_CALL(cudaMalloc(&rf_metadata_d, buffer_size_.get() * sizeof(RFMetadata)));
 
-  auto cuda_err_status = cudaGetLastError();
-  if (cuda_err_status != cudaSuccess) {
-    HOLOSCAN_LOG_ERROR(cudaGetErrorString(cuda_err_status));
+  if (cudaGetLastError() != cudaSuccess) {
     exit(1);
   }
 

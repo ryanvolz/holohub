@@ -125,6 +125,15 @@ struct BufferTracking {
     cudaMemset(counter_d, 0, buffer_size * sizeof(unsigned long long int));
   }
 
+  ~BufferTracking() {
+    cudaFreeHost(sample_cnt_h);
+    cudaFree(sample_cnt_d);
+    cudaFreeHost(received_end_h);
+    cudaFree(received_end_d);
+    cudaFreeHost(counter_h);
+    cudaFree(counter_d);
+  }
+
   cudaError_t transferSamples(const cudaMemcpyKind kind, cudaStream_t stream) {
     void* src;
     void* dst;
@@ -186,15 +195,6 @@ struct BufferTracking {
       return err;
     }
     return cudaSuccess;
-  }
-
-  ~BufferTracking() {
-    cudaFreeHost(sample_cnt_h);
-    cudaFree(sample_cnt_d);
-    cudaFreeHost(received_end_h);
-    cudaFree(received_end_d);
-    cudaFreeHost(counter_h);
-    cudaFree(counter_d);
   }
 
   void completed_at_pos(size_t completed_pos, cudaStream_t stream) {

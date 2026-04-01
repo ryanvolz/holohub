@@ -106,80 +106,29 @@ struct BufferTracking {
   BufferTracking() = default;
   explicit BufferTracking(const size_t _buffer_size)
       : pos(0), pos_wrap(0), buffer_size(_buffer_size) {
+    // Allocate pinned, mapped memory for buffer members that is accessible by both
+    // host and device, and get the host- and device-side pointers
+
     // Reserve sample count
-    cudaMallocHost((void**)&sample_cnt_h, buffer_size * sizeof(int));
-    cudaMalloc((void**)&sample_cnt_d, buffer_size * sizeof(int));
+    cudaHostAlloc(&sample_cnt_h, buffer_size * sizeof(int), cudaHostAllocMapped);
+    cudaHostGetDevicePointer(&sample_cnt_d, sample_cnt_h, 0);
     memset(sample_cnt_h, 0, buffer_size * sizeof(int));
-    cudaMemset(sample_cnt_d, 0, buffer_size * sizeof(int));
 
     // Reserve end-of-array signal
-    cudaMallocHost((void**)&received_end_h, buffer_size * sizeof(bool));
-    cudaMalloc((void**)&received_end_d, buffer_size * sizeof(bool));
+    cudaHostAlloc(&received_end_h, buffer_size * sizeof(bool), cudaHostAllocMapped);
+    cudaHostGetDevicePointer(&received_end_d, received_end_h, 0);
     memset(received_end_h, 0, buffer_size * sizeof(bool));
-    cudaMemset(received_end_d, 0, buffer_size * sizeof(bool));
 
     // Reserve buffer counter
-    cudaMallocHost((void**)&counter_h, buffer_size * sizeof(unsigned long long int));
-    cudaMalloc((void**)&counter_d, buffer_size * sizeof(unsigned long long int));
+    cudaHostAlloc(&counter_h, buffer_size * sizeof(unsigned long long int), cudaHostAllocMapped);
+    cudaHostGetDevicePointer(&counter_d, counter_h, 0);
     memset(counter_h, 0, buffer_size * sizeof(unsigned long long int));
-    cudaMemset(counter_d, 0, buffer_size * sizeof(unsigned long long int));
   }
 
-  cudaError_t transferSamples(const cudaMemcpyKind kind, cudaStream_t stream) {
-    void* src;
-    void* dst;
-
-    if (kind == cudaMemcpyHostToDevice) {
-      src = sample_cnt_h;
-      dst = sample_cnt_d;
-    } else {
-      src = sample_cnt_d;
-      dst = sample_cnt_h;
-    }
-    return cudaMemcpyAsync(dst, src, buffer_size * sizeof(int), kind, stream);
-  }
-
-  cudaError_t transferEndArray(const cudaMemcpyKind kind, cudaStream_t stream) {
-    void* src;
-    void* dst;
-
-    if (kind == cudaMemcpyHostToDevice) {
-      src = received_end_h;
-      dst = received_end_d;
-    } else if (kind == cudaMemcpyDeviceToHost) {
-      src = received_end_d;
-      dst = received_end_h;
-    } else {
-      HOLOSCAN_LOG_ERROR("Unknown option {}", fmt::underlying(kind));
-      return cudaErrorInvalidValue;
-    }
-    return cudaMemcpyAsync(dst, src, buffer_size * sizeof(bool), kind, stream);
-  }
-
-  cudaError_t transferCounters(const cudaMemcpyKind kind, cudaStream_t stream) {
-    void* src;
-    void* dst;
-
-    if (kind == cudaMemcpyHostToDevice) {
-      src = counter_h;
-      dst = counter_d;
-    } else {
-      src = counter_d;
-      dst = counter_h;
-    }
-    return cudaMemcpyAsync(dst, src, buffer_size * sizeof(unsigned long long int), kind, stream);
-  }
-
-  // TODO: Faster way than three separate memcpy's?
-  cudaError_t transfer(const cudaMemcpyKind kind, cudaStream_t stream) {
-    cudaError_t err;
-    err = transferSamples(kind, stream);
-    if (err != cudaSuccess) { return err; }
-    err = transferEndArray(kind, stream);
-    if (err != cudaSuccess) { return err; }
-    err = transferCounters(kind, stream);
-    if (err != cudaSuccess) { return err; }
-    return cudaSuccess;
+  ~BufferTracking() {
+    cudaFreeHost(sample_cnt_h);
+    cudaFreeHost(received_end_h);
+    cudaFreeHost(counter_h);
   }
 
   void completed_at_pos(size_t completed_pos) {

@@ -198,7 +198,17 @@ void NetConnectorBasic::initialize() {
 
   buffer_track = BufferTracking(buffer_size_.get());
   matx::make_tensor(rf_data, {buffer_size_.get(), num_samples_.get(), num_subchannels_.get()});
-  matx::make_tensor(rf_metadata, {buffer_size_.get()});
+
+  // allocate pinned, mapped memory for RFMetadata buffer that is accessible by both
+  // host and device, and get the host- and device-side pointers
+  cudaHostAlloc(&rf_metadata_h, buffer_size_.get() * sizeof(RFMetadata), cudaHostAllocMapped);
+  cudaHostGetDevicePointer(&rf_metadata_d, rf_metadata_h, 0);
+
+  auto cuda_err_status = cudaGetLastError();
+  if (cuda_err_status != cudaSuccess) {
+    HOLOSCAN_LOG_ERROR(cudaGetErrorString(cuda_err_status));
+    exit(1);
+  }
 
   HOLOSCAN_LOG_INFO("NetConnectorBasic::initialize() complete");
 }
@@ -211,12 +221,11 @@ void NetConnectorBasic::freeResources() {
     if (streams_[n]) { cudaStreamDestroy(streams_[n]); }
     if (events_[n]) { cudaEventDestroy(events_[n]); }
   }
-  if (buffer_track.sample_cnt_h) { cudaFreeHost(buffer_track.sample_cnt_h); }
-  if (buffer_track.sample_cnt_d) { cudaFree(buffer_track.sample_cnt_d); }
-  if (buffer_track.received_end_h) { cudaFreeHost(buffer_track.received_end_h); }
-  if (buffer_track.received_end_d) { cudaFree(buffer_track.received_end_d); }
-  if (buffer_track.counter_h) { cudaFreeHost(buffer_track.counter_h); }
-  if (buffer_track.counter_d) { cudaFree(buffer_track.counter_d); }
+  // rf_metadata_d points to same memory as rf_metadata_h, so freeing
+  // rf_metadata_h is sufficient
+  if (rf_metadata_h) {
+    cudaFreeHost(rf_metadata_h);
+  }
   if (spoof_header_d) { cudaFree(spoof_header_d); }
   HOLOSCAN_LOG_INFO("NetConnectorBasic::freeResources() complete");
 }
@@ -243,11 +252,9 @@ void NetConnectorBasic::check_completed_and_queue_arrays(OutputContext& op_outpu
   // We have to wait for the packet placement to finish because we don't know if a buffer is
   // filled until we check the result of the copy
   std::vector<NetConnectorBasic::RxMsg> completed_msgs = check_completed();
-  if (completed_msgs.empty()) { return; }
-  cudaStream_t stream = completed_msgs[0].stream;
-
-  buffer_track.transfer(cudaMemcpyDeviceToHost, stream);
-  cudaStreamSynchronize(stream);
+  if (completed_msgs.empty()) {
+    return;
+  }
 
   for (size_t i = 0; i < buffer_track.buffer_size; i++) {
     const size_t pos_wrap = (buffer_track.pos + i) % buffer_track.buffer_size;
@@ -260,15 +267,7 @@ void NetConnectorBasic::check_completed_and_queue_arrays(OutputContext& op_outpu
     auto out_data = matx::make_tensor<sample_t>(
         out_data_slice.Shape(), matx::MATX_ASYNC_DEVICE_MEMORY, op_stream);
     matx::copy(out_data, out_data_slice, op_stream);
-    auto out_metadata_tensor = matx::make_tensor<RFMetadata>({}, matx::MATX_HOST_MEMORY);
-    matx::copy(out_metadata_tensor,
-               rf_metadata.Slice<0>({static_cast<matx::index_t>(pos_wrap)}, {matx::matxDropDim}),
-               stream);
-    // operator() on metadata tensor runs immediately on host, so need copy to host memory to
-    // complete
-    cudaStreamSynchronize(stream);
-    auto out_metadata = out_metadata_tensor();
-    auto out_ptr = std::make_shared<RFArray<sample_t>>(out_data, out_metadata);
+    auto out_ptr = std::make_shared<RFArray<sample_t>>(out_data, rf_metadata_h[pos_wrap]);
     op_output.emit(out_ptr, "rf_out");
 
     HOLOSCAN_LOG_DEBUG(
@@ -294,8 +293,6 @@ void NetConnectorBasic::check_completed_and_queue_arrays(OutputContext& op_outpu
     buffer_track.completed_at_pos(buffer_track.counter_h[pos_wrap]);
     HOLOSCAN_LOG_TRACE("Next sample cycle expected: {}", buffer_track.pos);
 
-    buffer_track.transfer(cudaMemcpyHostToDevice, stream);
-    cudaStreamSynchronize(stream);
     break;
   }
 }
@@ -358,7 +355,7 @@ void NetConnectorBasic::compute(InputContext& op_input, OutputContext& op_output
 
         // Copy packet I/Q contents to appropriate location in 'rf_data'
         place_packet_data(rf_data.Data(),
-                          rf_metadata.Data(),
+                          rf_metadata_d,
                           h_dev_ptrs_[cur_idx],
                           buffer_track.sample_cnt_d,
                           buffer_track.received_end_d,

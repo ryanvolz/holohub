@@ -88,7 +88,9 @@ class NetConnectorBasic : public Operator {
   size_t samples_per_arr;
   BufferTracking buffer_track;
   matx::tensor_t<sample_t, 3> rf_data;
-  matx::tensor_t<RFMetadata, 1> rf_metadata;
+  // Host/Device pointers to same memory storing buffer of RFMetadata
+  RFMetadata* rf_metadata_h = nullptr;
+  RFMetadata* rf_metadata_d = nullptr;
 
   // Spoofed packet header device memory structure
   RFPacketHeader* spoof_header_d = nullptr;

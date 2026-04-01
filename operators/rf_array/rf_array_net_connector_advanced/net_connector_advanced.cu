@@ -487,11 +487,14 @@ void NetConnectorAdvanced::compute(InputContext& op_input, OutputContext& op_out
 
         ttl_pkts_recv_ += aggr_pkts_recv_;
 
-        if (cudaGetLastError() != cudaSuccess) {
+        auto cuda_err_status = cudaGetLastError();
+        if (cuda_err_status != cudaSuccess) {
           HOLOSCAN_LOG_ERROR(
-              "CUDA error dispatching batch from queue number {} after {} total packets received",
+              "CUDA error dispatching batch from queue number {} after {} total packets received: "
+              "{}",
               cur_idx,
-              ttl_pkts_recv_);
+              ttl_pkts_recv_,
+              cudaGetErrorString(cuda_err_status));
           exit(1);
         }
         aggr_pkts_recv_ = 0;

@@ -76,7 +76,7 @@ __global__ void place_packet_data_kernel(
         if (atomicExch(&buffer_counter[buffer_idx], global_buffer_idx) != global_buffer_idx) {
           // reset the buffer metadata for the current cycle
           sample_cnt[buffer_idx] = 0;
-          received_end[buffer_idx] = 0;
+          received_end[buffer_idx] = false;
         }
         if (sample_cnt[buffer_idx] == 0) {
           // set metadata the first time we write to this buffer idx

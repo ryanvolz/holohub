@@ -164,7 +164,6 @@ struct BufferTracking {
       src = sample_cnt_d;
       dst = sample_cnt_h;
     }
-    HOLOSCAN_LOG_DEBUG("dst {:p} src {:p} size {}", dst, src, buffer_size * sizeof(int));
     return HOLOSCAN_CUDA_CALL(cudaMemcpyAsync(dst, src, buffer_size * sizeof(int), kind, stream));
   }
 
@@ -182,7 +181,6 @@ struct BufferTracking {
       HOLOSCAN_LOG_ERROR("Unknown option {}", fmt::underlying(kind));
       return cudaErrorInvalidValue;
     }
-    HOLOSCAN_LOG_DEBUG("dst {:p} src {:p} size {}", dst, src, buffer_size * sizeof(bool));
     return HOLOSCAN_CUDA_CALL(cudaMemcpyAsync(dst, src, buffer_size * sizeof(bool), kind, stream));
   }
 
@@ -197,8 +195,6 @@ struct BufferTracking {
       src = counter_d;
       dst = counter_h;
     }
-    HOLOSCAN_LOG_DEBUG(
-        "dst {:p} src {:p} size {}", dst, src, buffer_size * sizeof(unsigned long long int));
     return HOLOSCAN_CUDA_CALL(
         cudaMemcpyAsync(dst, src, buffer_size * sizeof(unsigned long long int), kind, stream));
   }

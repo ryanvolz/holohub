@@ -297,15 +297,6 @@ void NetConnectorAdvanced::free_bufs_and_queue_arrays(OutputContext& op_output,
 
   for (size_t i = 0; i < buffer_track.buffer_size; i++) {
     const size_t pos_wrap = (buffer_track.pos + i) % buffer_track.buffer_size;
-    HOLOSCAN_LOG_DEBUG("received_end {} counter {} sample_cnt {}",
-                       buffer_track.received_end_h[pos_wrap],
-                       buffer_track.counter_h[pos_wrap],
-                       buffer_track.sample_cnt_h[pos_wrap]);
-    HOLOSCAN_LOG_DEBUG("sample_idx {} num {} den {} cf {}",
-                       rf_metadata_h[pos_wrap].sample_idx,
-                       rf_metadata_h[pos_wrap].sample_rate_numerator,
-                       rf_metadata_h[pos_wrap].sample_rate_denominator,
-                       rf_metadata_h[pos_wrap].center_freq);
     // Check for any completed buffers (End-of-Array toggled)
     if (!buffer_track.received_end_h[pos_wrap]) { continue; }
 
@@ -492,14 +483,14 @@ void NetConnectorAdvanced::compute(InputContext& op_input, OutputContext& op_out
                           ttl_pkts_recv_,            // only needed if spoofing packets
                           packet_skip_bytes_.get(),  // only needed if spoofing packets
                           streams_[cur_idx]);
+        // Get updated buffer tracking information back to host
+        buffer_track.transfer(cudaMemcpyDeviceToHost, streams_[cur_idx]);
         // Get updated rf_metadata buffer back to host
         HOLOSCAN_CUDA_CALL(cudaMemcpyAsync(rf_metadata_h,
                                            rf_metadata_d,
                                            buffer_size_.get() * sizeof(RFMetadata),
                                            cudaMemcpyDeviceToHost,
                                            streams_[cur_idx]));
-        // Get updated buffer tracking information back to host
-        buffer_track.transfer(cudaMemcpyDeviceToHost, streams_[cur_idx]);
 
         HOLOSCAN_CUDA_CALL(cudaEventRecord(events_[cur_idx], streams_[cur_idx]));
         cur_msg_.stream = streams_[cur_idx];

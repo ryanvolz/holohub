@@ -475,6 +475,7 @@ void NetConnectorAdvanced::compute(InputContext& op_input, OutputContext& op_out
                           ttl_pkts_recv_,            // only needed if spoofing packets
                           packet_skip_bytes_.get(),  // only needed if spoofing packets
                           streams_[cur_idx]);
+        HOLOSCAN_CUDA_CALL(cudaGetLastError());
         // Get updated buffer tracking information back to host
         buffer_track.transfer(cudaMemcpyDeviceToHost, streams_[cur_idx]);
         // Get updated rf_metadata buffer back to host

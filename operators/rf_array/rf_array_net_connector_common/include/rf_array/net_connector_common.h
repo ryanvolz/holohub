@@ -25,6 +25,7 @@
 #include <netinet/ip.h>
 
 #include "holoscan/holoscan.hpp"
+#include "holoscan/utils/cuda_macros.hpp"
 #include "rf_array/rf_array.h"
 
 // Packet header for RF signal
@@ -145,7 +146,7 @@ struct BufferTracking {
       src = sample_cnt_d;
       dst = sample_cnt_h;
     }
-    return cudaMemcpyAsync(dst, src, buffer_size * sizeof(int), kind, stream);
+    return HOLOSCAN_CUDA_CALL(cudaMemcpyAsync(dst, src, buffer_size * sizeof(int), kind, stream));
   }
 
   cudaError_t transferEndArray(const cudaMemcpyKind kind, cudaStream_t stream) {
@@ -162,7 +163,7 @@ struct BufferTracking {
       HOLOSCAN_LOG_ERROR("Unknown option {}", fmt::underlying(kind));
       return cudaErrorInvalidValue;
     }
-    return cudaMemcpyAsync(dst, src, buffer_size * sizeof(bool), kind, stream);
+    return HOLOSCAN_CUDA_CALL(cudaMemcpyAsync(dst, src, buffer_size * sizeof(bool), kind, stream));
   }
 
   cudaError_t transferCounters(const cudaMemcpyKind kind, cudaStream_t stream) {
@@ -176,7 +177,8 @@ struct BufferTracking {
       src = counter_d;
       dst = counter_h;
     }
-    return cudaMemcpyAsync(dst, src, buffer_size * sizeof(unsigned long long int), kind, stream);
+    return HOLOSCAN_CUDA_CALL(
+        cudaMemcpyAsync(dst, src, buffer_size * sizeof(unsigned long long int), kind, stream));
   }
 
   // TODO: Faster way than three separate memcpy's?
@@ -203,16 +205,16 @@ struct BufferTracking {
     received_end_h[pos_wrap] = false;
     sample_cnt_h[pos_wrap] = 0;
     // leave counter_h untouched because kernel will update it when needed
-    cudaMemcpyAsync(&received_end_d[pos_wrap],
-                    &received_end_h[pos_wrap],
-                    sizeof(bool),
-                    cudaMemcpyHostToDevice,
-                    stream);
-    cudaMemcpyAsync(&sample_cnt_d[pos_wrap],
-                    &sample_cnt_h[pos_wrap],
-                    sizeof(int),
-                    cudaMemcpyHostToDevice,
-                    stream);
+    HOLOSCAN_CUDA_CALL(cudaMemcpyAsync(&received_end_d[pos_wrap],
+                                       &received_end_h[pos_wrap],
+                                       sizeof(bool),
+                                       cudaMemcpyHostToDevice,
+                                       stream));
+    HOLOSCAN_CUDA_CALL(cudaMemcpyAsync(&sample_cnt_d[pos_wrap],
+                                       &sample_cnt_h[pos_wrap],
+                                       sizeof(int),
+                                       cudaMemcpyHostToDevice,
+                                       stream));
     ++pos;
     pos_wrap = pos % buffer_size;
   }

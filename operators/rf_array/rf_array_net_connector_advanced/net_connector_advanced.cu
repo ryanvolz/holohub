@@ -296,6 +296,15 @@ void NetConnectorAdvanced::free_bufs_and_queue_arrays(OutputContext& op_output,
 
   for (size_t i = 0; i < buffer_track.buffer_size; i++) {
     const size_t pos_wrap = (buffer_track.pos + i) % buffer_track.buffer_size;
+    HOLOSCAN_LOG_DEBUG("received_end {} counter {} sample_cnt {}",
+                       buffer_track.received_end_h[pos_wrap],
+                       buffer_track.counter_h[pos_wrap],
+                       buffer_track.sample_cnt_h[pos_wrap]);
+    HOLOSCAN_LOG_DEBUG("sample_idx {} num {} den {} cf {}",
+                       rf_metadata_h[pos_wrap].sample_idx,
+                       rf_metadata_h[pos_wrap].sample_rate_numerator,
+                       rf_metadata_h[pos_wrap].sample_rate_denominator,
+                       rf_metadata_h[pos_wrap].center_freq);
     // Check for any completed buffers (End-of-Array toggled)
     if (!buffer_track.received_end_h[pos_wrap]) { continue; }
 

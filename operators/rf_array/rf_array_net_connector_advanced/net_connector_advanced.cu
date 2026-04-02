@@ -235,6 +235,11 @@ void NetConnectorAdvanced::initialize() {
 
   HOLOSCAN_CUDA_CALL(cudaMallocHost(&rf_metadata_h, buffer_size_.get() * sizeof(RFMetadata)));
   HOLOSCAN_CUDA_CALL(cudaMalloc(&rf_metadata_d, buffer_size_.get() * sizeof(RFMetadata)));
+  HOLOSCAN_CUDA_CALL(cudaMemset(rf_metadata_d, 0, buffer_size_.get() * sizeof(RFMetadata)));
+  HOLOSCAN_CUDA_CALL(cudaMemcpy(rf_metadata_h,
+                                rf_metadata_d,
+                                buffer_size_.get() * sizeof(RFMetadata),
+                                cudaMemcpyDeviceToHost));
 
   if (cudaGetLastError() != cudaSuccess) {
     exit(1);

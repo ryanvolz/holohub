@@ -256,6 +256,7 @@ void NetConnectorAdvanced::freeResources() {
     if (streams_[n]) { cudaStreamDestroy(streams_[n]); }
     if (events_[n]) { cudaEventDestroy(events_[n]); }
   }
+  buffer_track.free_memory();
   if (rf_metadata_h) {
     cudaFreeHost(rf_metadata_h);
   }

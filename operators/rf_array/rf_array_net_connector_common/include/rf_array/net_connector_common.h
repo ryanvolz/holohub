@@ -126,13 +126,31 @@ struct BufferTracking {
     cudaMemset(counter_d, 0, buffer_size * sizeof(unsigned long long int));
   }
 
-  ~BufferTracking() {
-    cudaFreeHost(sample_cnt_h);
-    cudaFree(sample_cnt_d);
-    cudaFreeHost(received_end_h);
-    cudaFree(received_end_d);
-    cudaFreeHost(counter_h);
-    cudaFree(counter_d);
+  void free_memory() {
+    if (sample_cnt_h) {
+      cudaFreeHost(sample_cnt_h);
+      sample_cnt_h = nullptr;
+    }
+    if (sample_cnt_d) {
+      cudaFree(sample_cnt_d);
+      sample_cnt_d = nullptr;
+    }
+    if (received_end_h) {
+      cudaFreeHost(received_end_h);
+      received_end_h = nullptr;
+    }
+    if (received_end_d) {
+      cudaFree(received_end_d);
+      received_end_d = nullptr;
+    }
+    if (counter_h) {
+      cudaFreeHost(counter_h);
+      counter_h = nullptr;
+    }
+    if (counter_d) {
+      cudaFree(counter_d);
+      counter_d = nullptr;
+    }
   }
 
   cudaError_t transferSamples(const cudaMemcpyKind kind, cudaStream_t stream) {

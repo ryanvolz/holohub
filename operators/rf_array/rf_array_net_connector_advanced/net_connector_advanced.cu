@@ -371,6 +371,13 @@ void NetConnectorAdvanced::compute(InputContext& op_input, OutputContext& op_out
     auto burst_pkts_remaining = burst_size;
 
     while (burst_pkts_remaining > 0) {
+      // Can't proceed until batch that we're aggregating packets into has been cleared from prior
+      // processing, so wait for the corresponding event to complete
+      if (cudaEventQuery(events_[cur_idx]) != cudaSuccess) {
+        HOLOSCAN_LOG_DEBUG("Waiting on event to clear batch with index {}", cur_idx);
+        HOLOSCAN_CUDA_CALL(cudaEventSynchronize(events_[cur_idx]));
+      }
+
       auto num_pkts_to_copy =
           std::min(burst_pkts_remaining, static_cast<int64_t>(batch_size_.get() - aggr_pkts_recv_));
 

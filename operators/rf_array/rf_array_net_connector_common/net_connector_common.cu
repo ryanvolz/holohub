@@ -77,8 +77,6 @@ __global__ void place_packet_data_kernel(
           // reset the buffer metadata for the current cycle
           sample_cnt[buffer_idx] = 0;
           received_end[buffer_idx] = false;
-        }
-        if (sample_cnt[buffer_idx] == 0) {
           // set metadata the first time we write to this buffer idx
           // (sample_idx corresponding to the start of the output array)
           out_metadata[buffer_idx].sample_idx = global_buffer_idx * num_samples;

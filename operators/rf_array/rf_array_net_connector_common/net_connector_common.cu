@@ -64,12 +64,27 @@ __global__ void place_packet_data_kernel(
     // Write samples only if they are not old
     if (global_buffer_idx >= buffer_counter[buffer_idx]) {
       // Compute pointer in buffer memory
-      uint32_t idx_offset = sample_idx * sample_stride + buffer_idx * buffer_stride;
+      uint32_t buffer_start = buffer_idx * buffer_stride;
+      uint32_t sample_start = sample_idx * sample_stride;
+
+      // Set output samples to zero if this is the first time we're writing to this buffer_idx
+      // (i.e. buffer counter does not hold the global buffer index we are writing, updated below)
+      if (buffer_counter[buffer_idx] != global_buffer_idx) {
+        for (uint32_t i = threadIdx.x; i < num_samples * num_subchannels; i += blockDim.x) {
+          out[buffer_start + i] = {};
+        }
+      }
 
       // Copy data
-      for (uint32_t i = threadIdx.x; i < samples_to_write * num_subchannels; i += blockDim.x) {
-        out[idx_offset + i] = samples[pkt_iq_idx + i];
-        if (apply_conjugate) { out[idx_offset + i].i *= -1; }
+      // (initialize i so that each thread always writes to same spots in buffer, and the same
+      //  ones it would have zeroed above)
+      for (uint32_t i = (threadIdx.x - sample_start) % blockDim.x;
+           i < samples_to_write * num_subchannels;
+           i += blockDim.x) {
+        out[buffer_start + sample_start + i] = samples[pkt_iq_idx + i];
+        if (apply_conjugate) {
+          out[buffer_start + sample_start + i].i *= -1;
+        }
       }
 
       if (threadIdx.x == 0) {

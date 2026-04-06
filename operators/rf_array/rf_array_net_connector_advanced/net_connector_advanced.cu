@@ -290,10 +290,41 @@ void NetConnectorAdvanced::free_bufs_and_queue_arrays(OutputContext& op_output,
 
   for (size_t i = 0; i < buffer_track.buffer_size; i++) {
     const size_t pos_wrap = (buffer_track.pos + i) % buffer_track.buffer_size;
-    // Check for any completed buffers (End-of-Array toggled)
-    if (!buffer_track.received_end_h[pos_wrap]) { continue; }
+    const size_t one_ahead = (buffer_track.pos + i + 1) % buffer_track.buffer_size;
 
-    // Received End-of-Array (EOA) message, add to output vector
+    // Move to next buffer in loop if this one is completely empty (likely when starting up)
+    if (buffer_track.sample_cnt_h[pos_wrap] == 0) {
+      continue;
+    }
+
+    // Output the next buffer if it is either completed, the next one is completed,
+    // or packets have already been placed two buffers or more beyond
+    if (!buffer_track.received_end_h[pos_wrap] && !buffer_track.received_end_h[one_ahead]) {
+      // Samples pending but nothing ready to output yet, exit loop
+      break;
+    }
+    bool two_ahead_plus_packets = false;
+    for (size_t j = 2; j < buffer_track.buffer_size; j++) {
+      const size_t j_pos_wrap = (buffer_track.pos + i + j) % buffer_track.buffer_size;
+      if (buffer_track.counter_h[j_pos_wrap] > buffer_track.counter_h[pos_wrap]) {
+        two_ahead_plus_packets = true;
+        break;
+      }
+    }
+    if (!two_ahead_plus_packets) {
+      // Samples pending but nothing ready to output yet, exit loop
+      break;
+    }
+
+    // Log if we are outputting with missing samples
+    if (buffer_track.sample_cnt_h[pos_wrap] < num_samples_.get() * num_subchannels_.get()) {
+      HOLOSCAN_LOG_WARN(
+          "Outputting sample buffer {} with {} missing IQ samples",
+          buffer_track.counter_h[pos_wrap],
+          num_samples_.get() * num_subchannels_.get() - buffer_track.sample_cnt_h[pos_wrap]);
+    }
+
+    // Copy buffer to output vector
     auto out_data_slice = rf_data.Slice<2>({static_cast<matx::index_t>(pos_wrap), 0, 0},
                                            {matx::matxDropDim, matx::matxEnd, matx::matxEnd});
     auto out_data = matx::make_tensor<sample_t>(
@@ -312,22 +343,8 @@ void NetConnectorAdvanced::free_bufs_and_queue_arrays(OutputContext& op_output,
 
     // Set buffer to next position after the one just completed
     // (place_packet_data kernel will take care of resetting counters)
-    for (size_t j = 0; j < i; j++) {
-      const size_t j_pos_wrap = (buffer_track.pos + j) % buffer_track.buffer_size;
-      if (buffer_track.counter_h[j_pos_wrap] != 0 &&
-          buffer_track.counter_h[j_pos_wrap] < buffer_track.counter_h[pos_wrap]) {
-        HOLOSCAN_LOG_WARN(
-            "Skipped sample buffer {} which only held {}/{} IQ samples (received_end flag was {})",
-            buffer_track.counter_h[j_pos_wrap],
-            buffer_track.sample_cnt_h[j_pos_wrap],
-            num_samples_.get() * num_subchannels_.get(),
-            buffer_track.received_end_h[j_pos_wrap]);
-      }
-    }
     buffer_track.completed_at_pos(buffer_track.counter_h[pos_wrap], completed_batch_stream);
     HOLOSCAN_LOG_TRACE("Next sample cycle expected: {}", buffer_track.pos);
-
-    break;
   }
 }
 

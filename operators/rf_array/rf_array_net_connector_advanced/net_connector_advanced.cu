@@ -296,9 +296,10 @@ void NetConnectorAdvanced::free_bufs_and_queue_arrays(OutputContext& op_output,
                        buffer_track.received_end_h[pos_wrap]);
   }
 
+  auto start_pos = buffer_track.pos;
   for (size_t i = 0; i < buffer_track.buffer_size; i++) {
-    const size_t pos_wrap = (buffer_track.pos + i) % buffer_track.buffer_size;
-    const size_t one_ahead = (buffer_track.pos + i + 1) % buffer_track.buffer_size;
+    const size_t pos_wrap = (start_pos + i) % buffer_track.buffer_size;
+    const size_t one_ahead = (start_pos + i + 1) % buffer_track.buffer_size;
 
     // Move to next buffer in loop if this one is completely empty (likely when starting up)
     if (buffer_track.sample_cnt_h[pos_wrap] == 0) {
@@ -309,7 +310,7 @@ void NetConnectorAdvanced::free_bufs_and_queue_arrays(OutputContext& op_output,
     // or packets have already been placed two buffers or more beyond
     bool packets_seen_two_ahead_plus = false;
     for (size_t j = 2; j < buffer_track.buffer_size; j++) {
-      const size_t j_pos_wrap = (buffer_track.pos + i + j) % buffer_track.buffer_size;
+      const size_t j_pos_wrap = (start_pos + i + j) % buffer_track.buffer_size;
       if (buffer_track.counter_h[j_pos_wrap] > buffer_track.counter_h[pos_wrap]) {
         packets_seen_two_ahead_plus = true;
         break;

@@ -272,10 +272,6 @@ void NetConnectorBasic::check_completed_and_queue_arrays(OutputContext& op_outpu
 
     // Output the next buffer if it is either completed, the next one is completed,
     // or packets have already been placed two buffers or more beyond
-    if (!buffer_track.received_end_h[pos_wrap] && !buffer_track.received_end_h[one_ahead]) {
-      // Samples pending but nothing ready to output yet, exit loop
-      break;
-    }
     bool packets_seen_two_ahead_plus = false;
     for (size_t j = 2; j < buffer_track.buffer_size; j++) {
       const size_t j_pos_wrap = (buffer_track.pos + i + j) % buffer_track.buffer_size;
@@ -284,7 +280,8 @@ void NetConnectorBasic::check_completed_and_queue_arrays(OutputContext& op_outpu
         break;
       }
     }
-    if (!packets_seen_two_ahead_plus) {
+    if (!buffer_track.received_end_h[pos_wrap] && !buffer_track.received_end_h[one_ahead] &&
+        !packets_seen_two_ahead_plus) {
       // Samples pending but nothing ready to output yet, exit loop
       break;
     }

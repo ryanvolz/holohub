@@ -276,17 +276,21 @@ void NetConnectorBasic::check_completed_and_queue_arrays(OutputContext& op_outpu
       // Samples pending but nothing ready to output yet, exit loop
       break;
     }
-    bool two_ahead_plus_packets = false;
+    bool packets_seen_two_ahead_plus = false;
     for (size_t j = 2; j < buffer_track.buffer_size; j++) {
       const size_t j_pos_wrap = (buffer_track.pos + i + j) % buffer_track.buffer_size;
       if (buffer_track.counter_h[j_pos_wrap] > buffer_track.counter_h[pos_wrap]) {
-        two_ahead_plus_packets = true;
+        packets_seen_two_ahead_plus = true;
         break;
       }
     }
-    if (!two_ahead_plus_packets) {
+    if (!packets_seen_two_ahead_plus) {
       // Samples pending but nothing ready to output yet, exit loop
       break;
+    }
+    if (buffer_track.pos == 0 && !buffer_track.received_end_h[pos_wrap]) {
+      // Ignore partially filled buffer when first starting up (pos == 0)
+      continue;
     }
 
     // Log if we are outputting with missing samples

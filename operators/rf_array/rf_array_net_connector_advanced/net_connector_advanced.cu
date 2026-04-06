@@ -124,13 +124,6 @@ void NetConnectorAdvanced::initialize() {
   register_converter<std::map<std::string, uint64_t>>();
   holoscan::Operator::initialize();
 
-  port_id_ = get_port_id(interface_name_.get());
-  if (port_id_ == -1) {
-    HOLOSCAN_LOG_ERROR("Invalid network interface {} specified in the config",
-                       interface_name_.get());
-    exit(1);
-  }
-
   // Maximum number of RF samples (of num_subchannels I/Q samples) per packet
   max_samples_per_packet = (max_packet_size_.get() - sizeof(RFPacketHeader)) /
                            (num_subchannels_.get() * sizeof(sample_t));
@@ -350,6 +343,17 @@ void NetConnectorAdvanced::compute(InputContext& op_input, OutputContext& op_out
         fmt::format("Failed to allocate cuda stream with error: {}", error.what()));
   }
   cudaStream_t op_stream = maybe_stream.value();
+
+  if (port_id_ == -1) {
+    // initialize on first compute since we don't init the Advanced Network Operator until
+    // the application starts in order to not collect packets until everything is ready
+    port_id_ = get_port_id(interface_name_.get());
+    if (port_id_ == -1) {
+      HOLOSCAN_LOG_ERROR("Invalid network interface {} specified in the config",
+                         interface_name_.get());
+      exit(1);
+    }
+  }
 
   BurstParams* burst;
   auto burst_status = get_rx_burst(&burst, port_id_, queue_id_.get());

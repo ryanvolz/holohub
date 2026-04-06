@@ -91,7 +91,7 @@ class NetConnectorAdvanced : public Operator {
   int64_t ttl_pkts_recv_ = 0;   // Total packets received in operator
   int64_t aggr_pkts_recv_ = 0;  // Aggregate packets received in processing batch
 
-  int port_id_;
+  int port_id_ = -1;
   uint32_t max_samples_per_packet;
   size_t samples_per_arr;
   BufferTracking buffer_track;

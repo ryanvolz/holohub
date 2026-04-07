@@ -50,7 +50,13 @@ __global__ void place_packet_data_kernel(
   }
 
   if (threadIdx.x == 0 && meta->pkt_samples > max_samples_per_packet) {
-    printf("WARNING: Packet has invalid pkt_samples = %u in header\n", meta->pkt_samples);
+    const uint16_t buffer_idx_tmp = (meta->sample_idx / num_samples) % buffer_size;
+    if (sample_cnt[buffer_idx_tmp] == 0) {
+      // Only output full warning once per buffer, if that
+      printf("WARNING: Packet has invalid pkt_samples = %u in header\n", meta->pkt_samples);
+    }
+    //  I for invalid, since if this happens it can happen a lot make it very terse
+    printf("I");
   }
 
   uint64_t global_sample_idx = meta->sample_idx;
@@ -110,13 +116,18 @@ __global__ void place_packet_data_kernel(
       }
     } else {
       if (threadIdx.x == 0) {
-        printf(
-            "WARNING: Packet with sample_idx = %llu implies an old buffer_idx: %llu (current: "
-            "%llu). "
-            "Copying this data has been skipped.\n",
-            meta->sample_idx,
-            global_buffer_idx,
-            buffer_counter[buffer_idx]);
+        if (sample_idx == 0) {
+          // Only output full warning once per buffer, if that
+          printf(
+              "WARNING: Packet with sample_idx = %llu implies an old buffer_idx: %llu (current: "
+              "%llu). "
+              "Copying this data has been skipped.\n",
+              meta->sample_idx,
+              global_buffer_idx,
+              buffer_counter[buffer_idx]);
+        }
+        // L for Late or oLd, since if this happens it can happen a lot make it very terse
+        printf("L");
       }
     }
 

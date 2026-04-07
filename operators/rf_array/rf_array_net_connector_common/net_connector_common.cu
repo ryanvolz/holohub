@@ -77,7 +77,7 @@ __global__ void place_packet_data_kernel(
       // Set output samples to zero if this is the first time we're writing to this buffer_idx
       // (i.e. buffer counter does not hold the global buffer index we are writing, updated below)
       if (buffer_counter[buffer_idx] != global_buffer_idx) {
-        for (uint32_t i = threadIdx.x; i < num_samples * num_subchannels; i += blockDim.x) {
+        for (uint32_t i = threadIdx.x; i < buffer_stride; i += blockDim.x) {
           out[buffer_start + i] = {};
         }
       }

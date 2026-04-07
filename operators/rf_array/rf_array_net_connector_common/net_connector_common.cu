@@ -74,17 +74,8 @@ __global__ void place_packet_data_kernel(
       uint32_t buffer_start = buffer_idx * buffer_stride;
       uint32_t sample_start = sample_idx * sample_stride;
 
-      // Set output samples to zero if this is the first time we're writing to this buffer_idx
-      // (i.e. buffer counter does not hold the global buffer index we are writing, updated below)
-      if (buffer_counter[buffer_idx] != global_buffer_idx) {
-        for (uint32_t i = threadIdx.x; i < buffer_stride; i += blockDim.x) {
-          out[buffer_start + i] = {};
-        }
-      }
-
       // Copy data
-      // (initialize i so that each thread always writes to same spots in buffer, and the same
-      //  ones it would have zeroed above)
+      // (initialize i so that each thread always writes to same spots in buffer)
       for (uint32_t i = (threadIdx.x - sample_start) % blockDim.x;
            i < samples_to_write * num_subchannels;
            i += blockDim.x) {
@@ -96,9 +87,6 @@ __global__ void place_packet_data_kernel(
 
       if (threadIdx.x == 0) {
         if (atomicExch(&buffer_counter[buffer_idx], global_buffer_idx) != global_buffer_idx) {
-          // reset the buffer metadata for the current cycle
-          sample_cnt[buffer_idx] = 0;
-          received_end[buffer_idx] = false;
           // set metadata the first time we write to this buffer idx
           // (sample_idx corresponding to the start of the output array)
           out_metadata[buffer_idx].sample_idx = global_buffer_idx * num_samples;

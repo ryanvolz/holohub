@@ -351,6 +351,19 @@ void NetConnectorAdvanced::free_bufs_and_queue_arrays(OutputContext& op_output,
         buffer_track.sample_cnt_h[pos_wrap],
         pos_wrap);
 
+    // Synchronize completed_batch_stream with op_stream so we know data copying is done before
+    // resetting the buffer and continuing with further packet copying on the batch streams
+    cudaEvent_t op_stream_done;
+    cudaEventCreate(&op_stream_done);
+    cudaEventRecord(op_stream_done, op_stream);
+    cudaStreamWaitEvent(completed_batch_stream, op_stream_done);
+
+    // Reset data buffer to 0 after data is copied out
+    auto real_shp = out_data_slice.Shape();
+    real_shp[1] = 2 * real_shp[1];
+    auto out_data_int_view = out_data_slice.View<real_t, 2, typeof(real_shp)>(std::move(real_shp));
+    (out_data_int_view = matx::zeros()).run(completed_batch_stream);
+
     // Set buffer to next position after the one just completed
     // (place_packet_data kernel will take care of resetting counters)
     buffer_track.completed_at_pos(buffer_track.counter_h[pos_wrap], completed_batch_stream);

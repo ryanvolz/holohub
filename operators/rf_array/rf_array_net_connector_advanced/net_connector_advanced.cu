@@ -288,14 +288,6 @@ void NetConnectorAdvanced::free_bufs_and_queue_arrays(OutputContext& op_output,
   }
   cudaStream_t completed_batch_stream = completed_msgs[0].stream;
 
-  for (size_t i = 0; i < buffer_track.buffer_size; i++) {
-    const size_t pos_wrap = (buffer_track.pos + i) % buffer_track.buffer_size;
-    HOLOSCAN_LOG_DEBUG("Buffer {}: cnt {} (end {})",
-                       buffer_track.counter_h[pos_wrap],
-                       buffer_track.sample_cnt_h[pos_wrap],
-                       buffer_track.received_end_h[pos_wrap]);
-  }
-
   auto buf_idx = buffer_track.find_ready_idx(buffer_track.find_start_idx());
   while (buf_idx != buffer_track.buffer_size) {
     // We have something to output!

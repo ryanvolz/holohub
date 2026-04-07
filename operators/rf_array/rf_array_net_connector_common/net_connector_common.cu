@@ -86,14 +86,19 @@ __global__ void place_packet_data_kernel(
       }
 
       if (threadIdx.x == 0) {
-        if (atomicExch(&buffer_counter[buffer_idx], global_buffer_idx) != global_buffer_idx) {
-          // set metadata the first time we write to this buffer idx
-          // (sample_idx corresponding to the start of the output array)
-          out_metadata[buffer_idx].sample_idx = global_buffer_idx * num_samples;
+        // set metadata the first time we write to this buffer idx
+        // (sample_idx corresponding to the start of the output array)
+        if (atomicExch((unsigned long long int*)&out_metadata[buffer_idx].sample_idx,
+                       global_buffer_idx * num_samples) != global_buffer_idx * num_samples) {
           out_metadata[buffer_idx].sample_rate_numerator = meta->sample_rate_numerator;
           out_metadata[buffer_idx].sample_rate_denominator = meta->sample_rate_denominator;
           out_metadata[buffer_idx].center_freq =
               freq_idx_scaling * meta->freq_idx + freq_idx_offset;
+          // Also make sure the buffer counter is current (if packets are coming in order then
+          // this should only change anything when buffer counter is initially zero).
+          // (This should be safe since other threads only use the counter to determine if
+          //  samples are too old to write, and if this affects that then they were.)
+          buffer_counter[buffer_idx] = global_buffer_idx;
         }
 
         // todo Smarter way than atomicAdd

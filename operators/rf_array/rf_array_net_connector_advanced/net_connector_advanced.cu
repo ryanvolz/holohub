@@ -321,42 +321,43 @@ void NetConnectorAdvanced::free_bufs_and_queue_arrays(OutputContext& op_output,
       // Samples pending but nothing ready to output yet, exit loop
       break;
     }
-    if (buffer_track.pos == 0 && !buffer_track.received_end_h[pos_wrap]) {
-      // Ignore partially filled buffer when first starting up (pos == 0)
-      continue;
-    }
 
-    // Log if we are outputting with missing samples
-    if (buffer_track.sample_cnt_h[pos_wrap] < num_samples_.get() * num_subchannels_.get()) {
-      HOLOSCAN_LOG_WARN(
-          "Outputting sample buffer {} with {} missing IQ samples",
-          buffer_track.counter_h[pos_wrap],
-          num_samples_.get() * num_subchannels_.get() - buffer_track.sample_cnt_h[pos_wrap]);
-    }
-
-    // Copy buffer to output vector
+    // Get view of current data buffer
     auto out_data_slice = rf_data.Slice<2>({static_cast<matx::index_t>(pos_wrap), 0, 0},
                                            {matx::matxDropDim, matx::matxEnd, matx::matxEnd});
-    auto out_data = matx::make_tensor<sample_t>(
-        out_data_slice.Shape(), matx::MATX_ASYNC_DEVICE_MEMORY, op_stream);
-    matx::copy(out_data, out_data_slice, op_stream);
-    auto out_ptr = std::make_shared<RFArray<sample_t>>(out_data, rf_metadata_h[pos_wrap]);
-    // Need to manually set stream on output because it was not gotten by receive_cuda_stream
-    op_output.set_cuda_stream(op_stream, "rf_out");
-    op_output.emit(out_ptr, "rf_out");
 
-    HOLOSCAN_LOG_DEBUG(
-        "Emitting sample buffer {} with {} IQ samples from internal staging buffer {}",
-        buffer_track.counter_h[pos_wrap],
-        buffer_track.sample_cnt_h[pos_wrap],
-        pos_wrap);
+    // When first starting up (pos == 0), don't output a partially-filled buffer
+    if (buffer_track.pos != 0 || buffer_track.received_end_h[pos_wrap]) {
+      // Log if we are outputting with missing samples
+      if (buffer_track.sample_cnt_h[pos_wrap] < num_samples_.get() * num_subchannels_.get()) {
+        HOLOSCAN_LOG_WARN(
+            "Outputting sample buffer {} with {} missing IQ samples",
+            buffer_track.counter_h[pos_wrap],
+            num_samples_.get() * num_subchannels_.get() - buffer_track.sample_cnt_h[pos_wrap]);
+      }
 
-    // Synchronize completed_batch_stream with op_stream so we know data copying is done before
-    // resetting the buffer and continuing with further packet copying on the batch streams
-    cudaEvent_t op_stream_done;
-    cudaEventCreate(&op_stream_done);
-    cudaEventRecord(op_stream_done, op_stream);
-    cudaStreamWaitEvent(completed_batch_stream, op_stream_done);
+      // Copy buffer to output vector
+      auto out_data = matx::make_tensor<sample_t>(
+          out_data_slice.Shape(), matx::MATX_ASYNC_DEVICE_MEMORY, op_stream);
+      matx::copy(out_data, out_data_slice, op_stream);
+      auto out_ptr = std::make_shared<RFArray<sample_t>>(out_data, rf_metadata_h[pos_wrap]);
+      // Need to manually set stream on output because it was not gotten by receive_cuda_stream
+      op_output.set_cuda_stream(op_stream, "rf_out");
+      op_output.emit(out_ptr, "rf_out");
+
+      HOLOSCAN_LOG_DEBUG(
+          "Emitting sample buffer {} with {} IQ samples from internal staging buffer {}",
+          buffer_track.counter_h[pos_wrap],
+          buffer_track.sample_cnt_h[pos_wrap],
+          pos_wrap);
+
+      // Synchronize completed_batch_stream with op_stream so we know data copying is done before
+      // resetting the buffer and continuing with further packet copying on the batch streams
+      cudaEvent_t op_stream_done;
+      cudaEventCreate(&op_stream_done);
+      cudaEventRecord(op_stream_done, op_stream);
+      cudaStreamWaitEvent(completed_batch_stream, op_stream_done);
+    }
 
     // Reset data buffer to 0 after data is copied out
     auto real_shp = out_data_slice.Shape();

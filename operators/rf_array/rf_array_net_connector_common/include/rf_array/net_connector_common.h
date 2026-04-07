@@ -235,7 +235,7 @@ struct BufferTracking {
     auto dropped_iq_samples = (num_samples * num_subchannels) - sample_cnt_h[buf_idx];
     auto dropped_samples = dropped_iq_samples / num_subchannels;
 
-    if (total_output_samples > 0) {
+    if (total_output_samples == 0) {
       // We haven't output any samples yet, so set start_sample_idx
       start_sample_idx = counter_h[buf_idx] * num_samples;
       // If we have samples "missing" from this first buffer, assume they are at the beginning,
@@ -310,7 +310,7 @@ struct BufferTracking {
       bool packets_seen_two_ahead_plus = false;
       for (size_t j = 2; j < buffer_size; j++) {
         const size_t j_buf_idx = (buf_idx + j) % buffer_size;
-        if (counter_h[j_buf_idx] > counter_h[buf_idx]) {
+        if (sample_cnt_h[j_buf_idx] > 0 && (counter_h[j_buf_idx] > counter_h[buf_idx])) {
           packets_seen_two_ahead_plus = true;
           break;
         }

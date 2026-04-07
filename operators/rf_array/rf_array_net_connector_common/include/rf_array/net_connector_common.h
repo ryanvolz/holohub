@@ -95,8 +95,12 @@ inline void spoofed_packet_header_from_map(RFPacketHeader* meta,
 // Tracks the status of filling an RF array
 struct BufferTracking {
   size_t pos;
-  size_t pos_wrap;
   size_t buffer_size;
+  uint32_t num_samples;
+  uint16_t num_subchannels;
+  uint64_t start_sample_idx;
+  uint64_t total_output_samples;
+  uint64_t total_dropped_samples;
   int* sample_cnt_h;
   int* sample_cnt_d;
   bool* received_end_h;
@@ -105,8 +109,15 @@ struct BufferTracking {
   unsigned long long int* counter_d;
 
   BufferTracking() = default;
-  explicit BufferTracking(const size_t _buffer_size)
-      : pos(0), pos_wrap(0), buffer_size(_buffer_size) {
+  explicit BufferTracking(const size_t _buffer_size, const uint32_t _num_samples,
+                          const uint16_t _num_subchannels)
+      : pos(0),
+        buffer_size(_buffer_size),
+        num_samples(_num_samples),
+        num_subchannels(_num_subchannels),
+        start_sample_idx(0),
+        total_output_samples(0),
+        total_dropped_samples(0) {
     // Reserve sample count
     cudaMallocHost((void**)&sample_cnt_h, buffer_size * sizeof(int));
     cudaMalloc((void**)&sample_cnt_d, buffer_size * sizeof(int));
@@ -217,28 +228,102 @@ struct BufferTracking {
     return cudaSuccess;
   }
 
-  void completed_at_pos(size_t completed_pos, cudaStream_t stream) {
-    pos = completed_pos;
-    pos_wrap = pos % buffer_size;
-    received_end_h[pos_wrap] = false;
-    sample_cnt_h[pos_wrap] = 0;
-    // leave counter_h untouched because kernel will update it when needed
-    HOLOSCAN_CUDA_CALL(cudaMemcpyAsync(&received_end_d[pos_wrap],
-                                       &received_end_h[pos_wrap],
-                                       sizeof(bool),
-                                       cudaMemcpyHostToDevice,
-                                       stream));
-    HOLOSCAN_CUDA_CALL(cudaMemcpyAsync(&sample_cnt_d[pos_wrap],
-                                       &sample_cnt_h[pos_wrap],
-                                       sizeof(int),
-                                       cudaMemcpyHostToDevice,
-                                       stream));
-    ++pos;
-    pos_wrap = pos % buffer_size;
+  cudaError_t completed_at_pos(size_t completed_pos, cudaStream_t stream) {
+    cudaError_t err;
+    size_t buf_idx = completed_pos % buffer_size;
+
+    auto dropped_iq_samples = (num_samples * num_subchannels) - sample_cnt_h[buf_idx];
+    auto dropped_samples = dropped_iq_samples / num_subchannels;
+
+    if (total_output_samples > 0) {
+      // We haven't output any samples yet, so set start_sample_idx
+      start_sample_idx = counter_h[buf_idx] * num_samples;
+      // If we have samples "missing" from this first buffer, assume they are at the beginning,
+      // don't count them as missing, and move start_sample_idx forward accordingly
+      start_sample_idx += dropped_samples;
+      dropped_samples = 0;
+    }
+
+    // Log if we are outputting with dropped samples
+    if (dropped_samples > 0) {
+      HOLOSCAN_LOG_WARN("Outputting sample buffer {} with {} dropped samples",
+                        counter_h[buf_idx],
+                        dropped_samples);
+    }
+
+    if (completed_pos != pos) {
+      // We skipped some buffers entirely, increment dropped samples accordingly
+      auto skipped_buffer_samples = (completed_pos - pos) * num_samples;
+      HOLOSCAN_LOG_WARN("Skipped empty sample buffers {} through {}, dropping {} samples",
+                        pos,
+                        completed_pos - 1,
+                        skipped_buffer_samples);
+      dropped_samples += skipped_buffer_samples;
+    }
+
+    // Set the next buffer position expected
+    pos = completed_pos + 1;
+
+    // Update total and dropped sample count
+    total_output_samples += (sample_cnt_h[buf_idx] / num_subchannels);
+    total_dropped_samples += dropped_samples;
+
+    // Reset the tracking values and copy to device memory
+    received_end_h[buf_idx] = false;
+    sample_cnt_h[buf_idx] = 0;
+    counter_h[buf_idx] += buffer_size;
+    err = transfer(cudaMemcpyHostToDevice, stream);
+    return err;
   }
 
-  bool is_ready(const size_t samples_per_arr) {
-    return received_end_h[pos_wrap] || sample_cnt_h[pos_wrap] >= samples_per_arr;
+  size_t find_start_idx() {
+    if (pos != 0) {
+      return pos % buffer_size;
+    }
+    // Find the starting buffer index by finding where the first samples have been put
+    // by comparing the increase in sample count from one index to the index before it.
+    size_t start_idx = 0;
+    int max_sample_diff = 0;
+    for (size_t i = 0; i < buffer_size; i++) {
+      const int sample_diff = sample_cnt_h[i] - sample_cnt_h[(i - 1) % buffer_size];
+      if (sample_diff > max_sample_diff) {
+        max_sample_diff = sample_diff;
+        start_idx = i;
+      }
+    }
+    // Set position now that we have a start index
+    pos = counter_h[start_idx];
+    return start_idx;
+  }
+
+  size_t find_ready_idx(size_t start_idx) {
+    for (size_t i = 0; i < buffer_size; i++) {
+      const size_t buf_idx = (start_idx + i) % buffer_size;
+
+      // Move to next buffer in loop if this one is completely empty
+      if (sample_cnt_h[buf_idx] == 0) {
+        continue;
+      }
+
+      // Output the next buffer if it is either completed, the next one is completed,
+      // or packets have already been placed two buffers or more beyond
+      bool packets_seen_two_ahead_plus = false;
+      for (size_t j = 2; j < buffer_size; j++) {
+        const size_t j_buf_idx = (buf_idx + j) % buffer_size;
+        if (counter_h[j_buf_idx] > counter_h[buf_idx]) {
+          packets_seen_two_ahead_plus = true;
+          break;
+        }
+      }
+      if (received_end_h[buf_idx] || received_end_h[(buf_idx + 1) % buffer_size] ||
+          packets_seen_two_ahead_plus) {
+        return buf_idx;
+      }
+      // Samples pending but nothing ready to output yet, return no ready index (buffer_size)
+      return buffer_size;
+    }
+    // Sample counts are all zeros, which shouldn't happen, but anyway we have nothing to output
+    return buffer_size;
   }
 };
 

@@ -197,7 +197,7 @@ void NetConnectorBasic::initialize() {
     }
   }
 
-  buffer_track = BufferTracking(buffer_size_.get());
+  buffer_track = BufferTracking(buffer_size_.get(), num_samples_.get(), num_subchannels_.get());
   matx::make_tensor(rf_data, {buffer_size_.get(), num_samples_.get(), num_subchannels_.get()});
 
   HOLOSCAN_CUDA_CALL(cudaMallocHost(&rf_metadata_h, buffer_size_.get() * sizeof(RFMetadata)));
@@ -261,66 +261,31 @@ void NetConnectorBasic::check_completed_and_queue_arrays(OutputContext& op_outpu
   }
   cudaStream_t completed_batch_stream = completed_msgs[0].stream;
 
-  auto start_pos = buffer_track.pos;
-  for (size_t i = 0; i < buffer_track.buffer_size; i++) {
-    const size_t pos_wrap = (start_pos + i) % buffer_track.buffer_size;
-    const size_t one_ahead = (start_pos + i + 1) % buffer_track.buffer_size;
-
-    // Move to next buffer in loop if this one is completely empty (likely when starting up)
-    if (buffer_track.sample_cnt_h[pos_wrap] == 0) {
-      continue;
-    }
-
-    // Output the next buffer if it is either completed, the next one is completed,
-    // or packets have already been placed two buffers or more beyond
-    bool packets_seen_two_ahead_plus = false;
-    for (size_t j = 2; j < buffer_track.buffer_size; j++) {
-      const size_t j_pos_wrap = (start_pos + i + j) % buffer_track.buffer_size;
-      if (buffer_track.counter_h[j_pos_wrap] > buffer_track.counter_h[pos_wrap]) {
-        packets_seen_two_ahead_plus = true;
-        break;
-      }
-    }
-    if (!buffer_track.received_end_h[pos_wrap] && !buffer_track.received_end_h[one_ahead] &&
-        !packets_seen_two_ahead_plus) {
-      // Samples pending but nothing ready to output yet, exit loop
-      break;
-    }
-
+  auto buf_idx = buffer_track.find_ready_idx(buffer_track.find_start_idx());
+  while (buf_idx != buffer_track.buffer_size) {
+    // We have something to output!
     // Get view of current data buffer
-    auto out_data_slice = rf_data.Slice<2>({static_cast<matx::index_t>(pos_wrap), 0, 0},
+    auto out_data_slice = rf_data.Slice<2>({static_cast<matx::index_t>(buf_idx), 0, 0},
                                            {matx::matxDropDim, matx::matxEnd, matx::matxEnd});
+    // Copy buffer to output vector
+    auto out_data = matx::make_tensor<sample_t>(
+        out_data_slice.Shape(), matx::MATX_ASYNC_DEVICE_MEMORY, op_stream);
+    matx::copy(out_data, out_data_slice, op_stream);
+    auto out_ptr = std::make_shared<RFArray<sample_t>>(out_data, rf_metadata_h[buf_idx]);
+    op_output.emit(out_ptr, "rf_out");
 
-    // When first starting up (pos == 0), don't output a partially-filled buffer
-    if (buffer_track.pos != 0 || buffer_track.received_end_h[pos_wrap]) {
-      // Log if we are outputting with missing samples
-      if (buffer_track.sample_cnt_h[pos_wrap] < num_samples_.get() * num_subchannels_.get()) {
-        HOLOSCAN_LOG_WARN(
-            "Outputting sample buffer {} with {} missing IQ samples",
-            buffer_track.counter_h[pos_wrap],
-            num_samples_.get() * num_subchannels_.get() - buffer_track.sample_cnt_h[pos_wrap]);
-      }
+    HOLOSCAN_LOG_DEBUG(
+        "Emitting sample buffer {} with {} IQ samples from internal staging buffer {}",
+        buffer_track.counter_h[buf_idx],
+        buffer_track.sample_cnt_h[buf_idx],
+        buf_idx);
 
-      // Copy buffer to output vector
-      auto out_data = matx::make_tensor<sample_t>(
-          out_data_slice.Shape(), matx::MATX_ASYNC_DEVICE_MEMORY, op_stream);
-      matx::copy(out_data, out_data_slice, op_stream);
-      auto out_ptr = std::make_shared<RFArray<sample_t>>(out_data, rf_metadata_h[pos_wrap]);
-      op_output.emit(out_ptr, "rf_out");
-
-      HOLOSCAN_LOG_DEBUG(
-          "Emitting sample buffer {} with {} IQ samples from internal staging buffer {}",
-          buffer_track.counter_h[pos_wrap],
-          buffer_track.sample_cnt_h[pos_wrap],
-          pos_wrap);
-
-      // Synchronize completed_batch_stream with op_stream so we know data copying is done before
-      // resetting the buffer and continuing with further packet copying on the batch streams
-      cudaEvent_t op_stream_done;
-      cudaEventCreate(&op_stream_done);
-      cudaEventRecord(op_stream_done, op_stream);
-      cudaStreamWaitEvent(completed_batch_stream, op_stream_done);
-    }
+    // Synchronize completed_batch_stream with op_stream so we know data copying is done before
+    // resetting the buffer and continuing with further packet copying on the batch streams
+    cudaEvent_t op_stream_done;
+    cudaEventCreate(&op_stream_done);
+    cudaEventRecord(op_stream_done, op_stream);
+    cudaStreamWaitEvent(completed_batch_stream, op_stream_done);
 
     // Reset data buffer to 0 after data is copied out
     auto real_shp = out_data_slice.Shape();
@@ -328,10 +293,13 @@ void NetConnectorBasic::check_completed_and_queue_arrays(OutputContext& op_outpu
     auto out_data_int_view = out_data_slice.View<real_t, 2, typeof(real_shp)>(std::move(real_shp));
     (out_data_int_view = matx::zeros()).run(completed_batch_stream);
 
-    // Set buffer to next position after the one just completed
-    // (place_packet_data kernel will take care of resetting counters)
-    buffer_track.completed_at_pos(buffer_track.counter_h[pos_wrap], completed_batch_stream);
+    // Set buffer to next position after the one just completed and update all tracking info
+    HOLOSCAN_CUDA_CALL(
+        buffer_track.completed_at_pos(buffer_track.counter_h[buf_idx], completed_batch_stream));
     HOLOSCAN_LOG_TRACE("Next sample cycle expected: {}", buffer_track.pos);
+
+    // See if we have another buffer ready
+    buf_idx = buffer_track.find_ready_idx(buf_idx);
   }
 }
 
@@ -466,9 +434,13 @@ void NetConnectorBasic::stop() {
       "NetConnectorBasic exit report:\n"
       "--------------------------------\n"
       " - Processed bytes:     {}\n"
-      " - Processed packets:   {}\n",
+      " - Processed packets:   {}\n"
+      " - Output samples:      {}\n"
+      " - Dropped samples:     {}\n",
       ttl_bytes_recv_,
-      ttl_pkts_recv_);
+      ttl_pkts_recv_,
+      buffer_track.total_output_samples,
+      buffer_track.total_dropped_samples);
 
   freeResources();
 }

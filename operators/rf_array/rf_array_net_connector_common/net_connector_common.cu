@@ -14,6 +14,9 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+#include <stdio.h>
+
 #include "rf_array/net_connector_common.h"
 #include "rf_array/rf_array.h"
 
@@ -44,6 +47,10 @@ __global__ void place_packet_data_kernel(
     meta = &meta_obj;
     samples = reinterpret_cast<const sample_t*>(reinterpret_cast<const char*>(in[pkt_idx]) +
                                                 packet_skip_bytes);
+  }
+
+  if (threadIdx.x == 0 && meta->pkt_samples > max_samples_per_packet) {
+    printf("WARNING: Packet has invalid pkt_samples = %u in header\n", meta->pkt_samples);
   }
 
   uint64_t global_sample_idx = meta->sample_idx;
@@ -107,6 +114,16 @@ __global__ void place_packet_data_kernel(
         if (sample_cnt[buffer_idx] >= num_subchannels * num_samples) {
           received_end[buffer_idx] = true;
         }
+      }
+    } else {
+      if (threadIdx.x == 0) {
+        printf(
+            "WARNING: Packet with sample_idx = %llu implies an old buffer_idx: %llu (current: "
+            "%llu). "
+            "Copying this data has been skipped.\n",
+            meta->sample_idx,
+            global_buffer_idx,
+            buffer_counter[buffer_idx]);
       }
     }
 

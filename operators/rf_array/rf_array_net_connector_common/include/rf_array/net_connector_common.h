@@ -93,11 +93,6 @@ inline void spoofed_packet_header_from_map(RFPacketHeader* meta,
   }
 }
 
-struct BufferAndIndex {
-  void* buffer_track;
-  size_t buf_idx;
-};
-
 // Tracks the status of filling an RF array
 struct BufferTracking {
   size_t pos;
@@ -293,7 +288,7 @@ struct BufferTracking {
       cudaEventRecord(sync_event, sync_stream);
       cudaStreamWaitEvent(stream, sync_event);
     }
-    BufferAndIndex buf_and_idx = {this, buf_idx};
+    auto buf_and_idx = std::make_tuple(this, buf_idx);
     err = HOLOSCAN_CUDA_CALL(cudaLaunchHostFunc(stream, reset_fun, &buf_and_idx));
     if (err != cudaSuccess) {
       return err;
@@ -308,9 +303,9 @@ struct BufferTracking {
   }
 
   static void reset_fun(void* data) {
-    auto* buf_and_idx = static_cast<BufferAndIndex*>(data);
-    auto* self = static_cast<BufferTracking*>(buf_and_idx->buffer_track);
-    auto buf_idx = buf_and_idx->buf_idx;
+    auto buf_and_idx = *static_cast<std::tuple<BufferTracking*, size_t>*>(data);
+    auto* self = std::get<0>(buf_and_idx);
+    auto buf_idx = std::get<1>(buf_and_idx);
     self->received_end_h[buf_idx] = false;
     self->sample_cnt_h[buf_idx] = 0;
     self->counter_h[buf_idx] += self->buffer_size;

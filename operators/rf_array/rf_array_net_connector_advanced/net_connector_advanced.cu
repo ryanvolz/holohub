@@ -290,7 +290,7 @@ void NetConnectorAdvanced::free_bufs_and_queue_arrays(OutputContext& op_output,
 
   for (size_t i = 0; i < buffer_track.buffer_size; i++) {
     const size_t pos_wrap = (buffer_track.pos + i) % buffer_track.buffer_size;
-    HOLOSCAN_LOG_DEBUG("Buffer {}: cnt {} (end {})",
+    HOLOSCAN_LOG_TRACE("Buffer {}: cnt {} (end {})",
                        buffer_track.counter_h[pos_wrap],
                        buffer_track.sample_cnt_h[pos_wrap],
                        buffer_track.received_end_h[pos_wrap]);

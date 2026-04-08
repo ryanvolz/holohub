@@ -374,6 +374,11 @@ struct BufferTracking {
         continue;
       }
 
+      // If this non-empty buffer is back in time from position, ignore and exit
+      if (counter_h[buf_idx] < pos) {
+        break;
+      }
+
       // Output the next buffer if it is either completed, the next one is completed,
       // or packets have already been placed two buffers or more beyond
       bool packets_seen_two_ahead_plus = false;
@@ -388,10 +393,10 @@ struct BufferTracking {
           packets_seen_two_ahead_plus) {
         return buf_idx;
       }
-      // Samples pending but nothing ready to output yet, return no ready index (buffer_size)
-      return buffer_size;
+      // Samples pending but nothing ready to output yet, break to return no ready index
+      break;
     }
-    // Sample counts are all zeros, which shouldn't happen, but anyway we have nothing to output
+    // Return flag for no ready index (buffer_size)
     return buffer_size;
   }
 };

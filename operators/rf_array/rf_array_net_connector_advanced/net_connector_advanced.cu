@@ -223,7 +223,8 @@ void NetConnectorAdvanced::initialize() {
     }
   }
 
-  buffer_track = BufferTracking(buffer_size_.get(), num_samples_.get(), num_subchannels_.get());
+  buffer_track =
+      BufferTracking(buffer_size_.get(), num_samples_.get(), num_subchannels_.get(), streams_);
   matx::make_tensor(rf_data, {buffer_size_.get(), num_samples_.get(), num_subchannels_.get()});
 
   HOLOSCAN_CUDA_CALL(cudaMallocHost(&rf_metadata_h, buffer_size_.get() * sizeof(RFMetadata)));

@@ -93,6 +93,11 @@ inline void spoofed_packet_header_from_map(RFPacketHeader* meta,
   }
 }
 
+struct BufferAndIndex {
+  void* buffer_track;
+  size_t buf_idx;
+};
+
 // Tracks the status of filling an RF array
 struct BufferTracking {
   size_t pos;
@@ -102,6 +107,8 @@ struct BufferTracking {
   uint64_t start_sample_idx;
   uint64_t total_output_samples;
   uint64_t total_dropped_samples;
+  std::vector<cudaStream_t> streams_to_sync;
+  std::vector<cudaEvent_t> sync_events;
   int* sample_cnt_h;
   int* sample_cnt_d;
   bool* received_end_h;
@@ -111,14 +118,23 @@ struct BufferTracking {
 
   BufferTracking() = default;
   explicit BufferTracking(const size_t _buffer_size, const uint32_t _num_samples,
-                          const uint16_t _num_subchannels)
+                          const uint16_t _num_subchannels,
+                          std::vector<cudaStream_t> _streams_to_sync)
       : pos(0),
         buffer_size(_buffer_size),
         num_samples(_num_samples),
         num_subchannels(_num_subchannels),
+        streams_to_sync(_streams_to_sync),
         start_sample_idx(0),
         total_output_samples(0),
         total_dropped_samples(0) {
+    // Create sync events for each stream plus an extra one for syncing Host to Device copy
+    for (auto i = 0; i < streams_to_sync.size() + 1; i++) {
+      cudaEvent_t evt;
+      cudaEventCreate(&evt);
+      sync_events.push_back(evt);
+    }
+
     // Reserve sample count
     cudaMallocHost((void**)&sample_cnt_h, buffer_size * sizeof(int));
     cudaMalloc((void**)&sample_cnt_d, buffer_size * sizeof(int));
@@ -139,6 +155,7 @@ struct BufferTracking {
   }
 
   void free_memory() {
+    for (auto evt : sync_events) { cudaEventDestroy(evt); }
     if (sample_cnt_h) {
       cudaFreeHost(sample_cnt_h);
       sample_cnt_h = nullptr;
@@ -269,13 +286,35 @@ struct BufferTracking {
     total_output_samples += (sample_cnt_h[buf_idx] / num_subchannels);
     total_dropped_samples += dropped_samples;
 
-    // Reset the tracking values and copy to device memory
-    received_end_h[buf_idx] = false;
-    sample_cnt_h[buf_idx] = 0;
-    counter_h[buf_idx] += buffer_size;
+    // Reset the tracking values and copy to device memory in sync with all relevant streams
+    for (auto i = 0; i < streams_to_sync.size(); i++) {
+      auto sync_stream = streams_to_sync[i];
+      auto sync_event = sync_events[i];
+      cudaEventRecord(sync_event, sync_stream);
+      cudaStreamWaitEvent(stream, sync_event);
+    }
+    BufferAndIndex buf_and_idx = {this, buf_idx};
+    err = HOLOSCAN_CUDA_CALL(cudaLaunchHostFunc(stream, reset_fun, &buf_and_idx));
+    if (err != cudaSuccess) {
+      return err;
+    }
     err = transfer(cudaMemcpyHostToDevice, stream);
+    cudaEventRecord(sync_events.back(), stream);
+    for (auto i = 0; i < streams_to_sync.size(); i++) {
+      auto sync_stream = streams_to_sync[i];
+      cudaStreamWaitEvent(sync_stream, sync_events.back());
+    }
     return err;
   }
+
+  static void reset_fun(void* data) {
+    auto* buf_and_idx = static_cast<BufferAndIndex*>(data);
+    auto* self = static_cast<BufferTracking*>(buf_and_idx->buffer_track);
+    auto buf_idx = buf_and_idx->buf_idx;
+    self->received_end_h[buf_idx] = false;
+    self->sample_cnt_h[buf_idx] = 0;
+    self->counter_h[buf_idx] += self->buffer_size;
+  };
 
   size_t find_start_idx() {
     if (pos != 0) {

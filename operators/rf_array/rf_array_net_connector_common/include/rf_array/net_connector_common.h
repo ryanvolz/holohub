@@ -17,6 +17,7 @@
 #pragma once
 
 #include <chrono>
+#include <limits>
 #include <map>
 #include <string>
 
@@ -280,14 +281,12 @@ struct BufferTracking {
     if (pos != 0) {
       return pos % buffer_size;
     }
-    // Find the starting buffer index by finding where the first samples have been put
-    // by comparing the increase in sample count from one index to the index before it.
+    // Find the starting buffer index by finding the lowest non-zero counter index
     size_t start_idx = 0;
-    int max_sample_diff = 0;
+    unsigned long long int lowest_counter = ULLONG_MAX;
     for (size_t i = 0; i < buffer_size; i++) {
-      const int sample_diff = sample_cnt_h[i] - sample_cnt_h[(i - 1) % buffer_size];
-      if (sample_diff > max_sample_diff) {
-        max_sample_diff = sample_diff;
+      if (counter_h[i] != 0 && counter_h[i] < lowest_counter) {
+        lowest_counter = counter_h[i];
         start_idx = i;
       }
     }

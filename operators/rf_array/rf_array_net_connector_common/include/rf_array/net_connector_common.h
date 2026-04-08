@@ -282,18 +282,48 @@ struct BufferTracking {
     total_dropped_samples += dropped_samples;
 
     // Reset the tracking values and copy to device memory in sync with all relevant streams
+    // Have stream that we will copy on wait on all the other buffer streams
     for (auto i = 0; i < streams_to_sync.size(); i++) {
       auto sync_stream = streams_to_sync[i];
       auto sync_event = sync_events[i];
       cudaEventRecord(sync_event, sync_stream);
       cudaStreamWaitEvent(stream, sync_event);
     }
-    auto buf_and_idx = std::make_tuple(this, buf_idx);
-    err = HOLOSCAN_CUDA_CALL(cudaLaunchHostFunc(stream, reset_fun, &buf_and_idx));
+    // Reset the tracking values locally (for continuing tracking loop now) and do it again
+    // once the streams are synced (in case the reset values are rewritten from the device)
+    auto reset_tuple = std::make_tuple(this, buf_idx, counter_h[buf_idx] + buffer_size);
+    reset_fun(&reset_tuple);
+    err = HOLOSCAN_CUDA_CALL(cudaLaunchHostFunc(stream, reset_fun, &reset_tuple));
     if (err != cudaSuccess) {
       return err;
     }
-    err = transfer(cudaMemcpyHostToDevice, stream);
+    // Do the transfers on the stream, but only of the values at buf_idx to better avoid races
+    err = HOLOSCAN_CUDA_CALL(cudaMemcpyAsync(&sample_cnt_d[buf_idx],
+                                             &sample_cnt_h[buf_idx],
+                                             sizeof(int),
+                                             cudaMemcpyHostToDevice,
+                                             stream));
+    if (err != cudaSuccess) {
+      return err;
+    }
+    err = HOLOSCAN_CUDA_CALL(cudaMemcpyAsync(&received_end_d[buf_idx],
+                                             &received_end_h[buf_idx],
+                                             sizeof(bool),
+                                             cudaMemcpyHostToDevice,
+                                             stream));
+    if (err != cudaSuccess) {
+      return err;
+    }
+    err = HOLOSCAN_CUDA_CALL(cudaMemcpyAsync(&counter_d[buf_idx],
+                                             &counter_h[buf_idx],
+                                             sizeof(unsigned long long int),
+                                             cudaMemcpyHostToDevice,
+                                             stream));
+    if (err != cudaSuccess) {
+      return err;
+    }
+    // Sync all the other buffer streams to the completion of the transfer, so they have
+    // an accurate account of the buffer tracking
     cudaEventRecord(sync_events.back(), stream);
     for (auto i = 0; i < streams_to_sync.size(); i++) {
       auto sync_stream = streams_to_sync[i];
@@ -303,12 +333,14 @@ struct BufferTracking {
   }
 
   static void reset_fun(void* data) {
-    auto buf_and_idx = *static_cast<std::tuple<BufferTracking*, size_t>*>(data);
-    auto* self = std::get<0>(buf_and_idx);
-    auto buf_idx = std::get<1>(buf_and_idx);
+    auto reset_tuple =
+        *static_cast<std::tuple<BufferTracking*, size_t, unsigned long long int>*>(data);
+    auto* self = std::get<0>(reset_tuple);
+    auto buf_idx = std::get<1>(reset_tuple);
+    auto new_counter_val = std::get<2>(reset_tuple);
     self->received_end_h[buf_idx] = false;
     self->sample_cnt_h[buf_idx] = 0;
-    self->counter_h[buf_idx] += self->buffer_size;
+    self->counter_h[buf_idx] = new_counter_val;
   };
 
   size_t find_start_idx() {

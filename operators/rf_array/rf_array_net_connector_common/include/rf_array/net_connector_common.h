@@ -104,6 +104,7 @@ struct BufferTracking {
   uint64_t total_dropped_samples;
   std::vector<cudaStream_t> streams_to_sync;
   std::vector<cudaEvent_t> sync_events;
+  std::vector<std::tuple<BufferTracking*, size_t, unsigned long long int>> reset_tuples;
   int* sample_cnt_h;
   int* sample_cnt_d;
   bool* received_end_h;
@@ -129,6 +130,9 @@ struct BufferTracking {
       cudaEventCreate(&evt);
       sync_events.push_back(evt);
     }
+
+    // Need place to hold what we're passing by pointer to the reset callback
+    reset_tuples.resize(buffer_size);
 
     // Reserve sample count
     cudaMallocHost((void**)&sample_cnt_h, buffer_size * sizeof(int));
@@ -291,9 +295,9 @@ struct BufferTracking {
     }
     // Reset the tracking values locally (for continuing tracking loop now) and do it again
     // once the streams are synced (in case the reset values are rewritten from the device)
-    auto reset_tuple = std::make_tuple(this, buf_idx, counter_h[buf_idx] + buffer_size);
-    reset_fun(&reset_tuple);
-    err = HOLOSCAN_CUDA_CALL(cudaLaunchHostFunc(stream, reset_fun, &reset_tuple));
+    reset_tuples[buf_idx] = std::make_tuple(this, buf_idx, counter_h[buf_idx] + buffer_size);
+    reset_fun(&reset_tuples[buf_idx]);
+    err = HOLOSCAN_CUDA_CALL(cudaLaunchHostFunc(stream, reset_fun, &reset_tuples[buf_idx]));
     if (err != cudaSuccess) {
       return err;
     }

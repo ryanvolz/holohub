@@ -337,7 +337,7 @@ void NetConnectorAdvanced::free_bufs_and_queue_arrays(OutputContext& op_output,
     HOLOSCAN_LOG_TRACE("Next sample cycle expected: {}", buffer_track.pos);
 
     // See if we have another buffer ready
-    buf_idx = buffer_track.find_ready_idx(buf_idx);
+    buf_idx = buffer_track.find_ready_idx(buffer_track.find_start_idx());
   }
 }
 

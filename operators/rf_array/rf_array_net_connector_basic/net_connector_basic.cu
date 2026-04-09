@@ -14,6 +14,8 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+#include <chrono>
+
 #include "holoscan/holoscan.hpp"
 #include "holoscan/utils/cuda_macros.hpp"
 #include "rf_array/net_connector_basic.h"
@@ -27,7 +29,10 @@ void NetConnectorBasic::setup(OperatorSpec& spec) {
   // an application. So just after you create a NetConnectorBasic operator, access "burst_in"
   // in the `inputs` map and call `connector()` to add a kDoubleBuffer resource with capacity
   // set to the value of the batch_capacity parameter.
-  spec.input<std::shared_ptr<NetworkOpBurstParams>>("burst_in");
+  // No input condition so operator will run regardless of whether input is available
+  // (this enables compute to be called regularly so we can emit a warning when a certain
+  //  time has passed since anything was output)
+  spec.input<std::shared_ptr<NetworkOpBurstParams>>("burst_in").condition(ConditionType::kNone);
   // No output condition so operator will always run when input is available,
   // regardless of whether downstream operators keep up
   spec.output<std::shared_ptr<RFArray<sample_t>>>("rf_out").condition(ConditionType::kNone);
@@ -282,6 +287,7 @@ void NetConnectorBasic::check_completed_and_queue_arrays(OutputContext& op_outpu
     matx::copy(out_data, out_data_slice, op_stream);
     auto out_ptr = std::make_shared<RFArray<sample_t>>(out_data, rf_metadata_h[buf_idx]);
     op_output.emit(out_ptr, "rf_out");
+    last_emit = std::chrono::steady_clock::now();
 
     HOLOSCAN_LOG_DEBUG(
         "Emitting sample buffer {} with {} IQ samples from internal staging buffer {}",
@@ -317,6 +323,12 @@ void NetConnectorBasic::compute(InputContext& op_input, OutputContext& op_output
   HOLOSCAN_LOG_TRACE("NetConnectorBasic::compute() called");
   auto burst_maybe = op_input.receive<std::shared_ptr<NetworkOpBurstParams>>("burst_in");
   cudaStream_t op_stream = op_input.receive_cuda_stream("burst_in", true, false);
+
+  if (!last_emit) {
+    // on first run set the time of last emit
+    last_emit = std::chrono::steady_clock::now();
+  }
+
   while (burst_maybe) {
     auto burst = burst_maybe.value();
 
@@ -435,6 +447,17 @@ void NetConnectorBasic::compute(InputContext& op_input, OutputContext& op_output
 
   // One final check for completed arrays before exiting
   check_completed_and_queue_arrays(op_output, op_stream);
+
+  // Check to see if it has been a while since anything was output, and warn if it has
+  auto now = std::chrono::steady_clock::now();
+  auto duration_since_emit_seconds =
+      std::chrono::duration_cast<std::chrono::seconds>(now - last_emit.value()).count();
+  if (duration_since_emit_seconds > 10) {
+    HOLOSCAN_LOG_WARN("No arrays have been output in at least the last 10 seconds!");
+    // Even though we haven't output anything, set the last emit time to now so we can
+    // output the warning again if there is still no output
+    last_emit = now;
+  }
 }
 
 void NetConnectorBasic::stop() {

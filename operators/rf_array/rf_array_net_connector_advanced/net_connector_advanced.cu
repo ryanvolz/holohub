@@ -14,6 +14,8 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+#include <chrono>
+
 #include "advanced_network/common.h"
 #include "advanced_network/types.h"
 #include "holoscan/holoscan.hpp"
@@ -311,6 +313,7 @@ void NetConnectorAdvanced::free_bufs_and_queue_arrays(OutputContext& op_output,
     // Need to manually set stream on output because it was not gotten by receive_cuda_stream
     op_output.set_cuda_stream(op_stream, "rf_out");
     op_output.emit(out_ptr, "rf_out");
+    last_emit = std::chrono::steady_clock::now();
 
     HOLOSCAN_LOG_DEBUG(
         "Emitting sample buffer {} with {} IQ samples from internal staging buffer {}",
@@ -363,6 +366,11 @@ void NetConnectorAdvanced::compute(InputContext& op_input, OutputContext& op_out
                          interface_name_.get());
       exit(1);
     }
+  }
+
+  if (!last_emit) {
+    // on first run set the time of last emit
+    last_emit = std::chrono::steady_clock::now();
   }
 
   BurstParams* burst;
@@ -535,6 +543,17 @@ void NetConnectorAdvanced::compute(InputContext& op_input, OutputContext& op_out
 
   // One final check for completed arrays before exiting
   free_bufs_and_queue_arrays(op_output, op_stream);
+
+  // Check to see if it has been a while since anything was output, and warn if it has
+  auto now = std::chrono::steady_clock::now();
+  auto duration_since_emit_seconds =
+      std::chrono::duration_cast<std::chrono::seconds>(now - last_emit.value()).count();
+  if (duration_since_emit_seconds > 10) {
+    HOLOSCAN_LOG_WARN("No arrays have been output in at least the last 10 seconds!");
+    // Even though we haven't output anything, set the last emit time to now so we can
+    // output the warning again if there is still no output
+    last_emit = now;
+  }
 }
 
 void NetConnectorAdvanced::stop() {

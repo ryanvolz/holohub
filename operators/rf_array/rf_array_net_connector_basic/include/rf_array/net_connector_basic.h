@@ -16,6 +16,9 @@
  */
 #pragma once
 
+#include <chrono>
+#include <optional>
+
 #include <matx.h>
 
 #include "basic_network_operator_rx.h"
@@ -79,13 +82,13 @@ class NetConnectorBasic : public Operator {
   std::vector<cudaEvent_t> events_;
   int cur_idx = 0;
 
-  // Holds burst buffers that cannot be freed yet
   int64_t ttl_bytes_recv_ = 0;  // Total bytes received in operator
   int64_t ttl_pkts_recv_ = 0;   // Total packets received in operator
   int64_t aggr_pkts_recv_ = 0;  // Aggregate packets received in processing batch
 
   uint32_t max_samples_per_packet;
   size_t samples_per_arr;
+  std::optional<std::chrono::steady_clock::time_point> last_emit;
   BufferTracking buffer_track;
   matx::tensor_t<sample_t, 3> rf_data;
   // Host/Device pointers to same memory storing buffer of RFMetadata

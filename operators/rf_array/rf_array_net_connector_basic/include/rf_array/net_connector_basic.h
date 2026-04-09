@@ -60,6 +60,9 @@ class NetConnectorBasic : public Operator {
   Parameter<uint16_t> batch_capacity_;
   Parameter<uint16_t> max_packet_size_;  // Maximum size of a single packet
 
+  // Miscellaneous
+  Parameter<uint32_t> no_output_warn_interval_;
+
   // Holds burst buffers that cannot be freed yet
   struct RxMsg {
     int num_batches;

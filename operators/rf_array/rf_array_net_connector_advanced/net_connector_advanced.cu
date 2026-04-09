@@ -106,8 +106,10 @@ void NetConnectorAdvanced::setup(OperatorSpec& spec) {
                    true);
   spec.param<uint32_t>(batch_size_,
                        "batch_size",
-                       "Batch size",
-                       "Batch size in packets for each processing epoch",
+                       // 10 comes from MAX_ANO_BATCHES defined in header
+                       "Batch size (max 10x ANO batch size)",
+                       "Batch size in packets for each processing epoch (must be at least ANO "
+                       "batch size and at most 10 times ANO batch size)",
                        1000);
   spec.param<uint16_t>(max_packet_size_,
                        "max_packet_size",
@@ -119,6 +121,13 @@ void NetConnectorAdvanced::setup(OperatorSpec& spec) {
                        "Batch capacity",
                        "Input buffer capacity in number of network packet batches",
                        4);
+
+  // Miscellaneous
+  spec.param<uint32_t>(no_output_warn_interval_,
+                       "no_output_warn_interval",
+                       "Warning interval for no output",
+                       "Interval in seconds between warnings about no output being produced",
+                       30);
 }
 
 void NetConnectorAdvanced::initialize() {
@@ -548,8 +557,11 @@ void NetConnectorAdvanced::compute(InputContext& op_input, OutputContext& op_out
   auto now = std::chrono::steady_clock::now();
   auto duration_since_emit_seconds =
       std::chrono::duration_cast<std::chrono::seconds>(now - last_emit.value()).count();
-  if (duration_since_emit_seconds > 10) {
-    HOLOSCAN_LOG_WARN("No arrays have been output in at least the last 10 seconds!");
+  if (duration_since_emit_seconds > no_output_warn_interval_.get()) {
+    HOLOSCAN_LOG_WARN("{}:{} No arrays have been output in at least the last {} seconds!",
+                      interface_name_.get(),
+                      queue_id_.get(),
+                      no_output_warn_interval_.get());
     // Even though we haven't output anything, set the last emit time to now so we can
     // output the warning again if there is still no output
     last_emit = now;

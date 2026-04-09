@@ -104,6 +104,13 @@ void NetConnectorBasic::setup(OperatorSpec& spec) {
                        "Batch capacity",
                        "Input buffer capacity in number of network packet batches",
                        4);
+
+  // Miscellaneous
+  spec.param<uint32_t>(no_output_warn_interval_,
+                       "no_output_warn_interval",
+                       "Warning interval for no output",
+                       "Interval in seconds between warnings about no output being produced",
+                       30);
 }
 
 void NetConnectorBasic::initialize() {
@@ -452,10 +459,9 @@ void NetConnectorBasic::compute(InputContext& op_input, OutputContext& op_output
   auto now = std::chrono::steady_clock::now();
   auto duration_since_emit_seconds =
       std::chrono::duration_cast<std::chrono::seconds>(now - last_emit.value()).count();
-  if (duration_since_emit_seconds > 10) {
-    HOLOSCAN_LOG_WARN("No arrays have been output in at least the last 10 seconds!");
-    // Even though we haven't output anything, set the last emit time to now so we can
-    // output the warning again if there is still no output
+  if (duration_since_emit_seconds > no_output_warn_interval_.get()) {
+    HOLOSCAN_LOG_WARN("No arrays have been output in at least the last {} seconds!",
+                      no_output_warn_interval_.get());
     last_emit = now;
   }
 }

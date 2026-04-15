@@ -51,8 +51,8 @@ __global__ void place_packet_data_kernel(
 
   if (threadIdx.x == 0 && meta->pkt_samples > max_samples_per_packet) {
     const uint16_t buffer_idx_tmp = (meta->sample_idx / num_samples) % buffer_size;
-    if (sample_cnt[buffer_idx_tmp] == 0) {
-      // Only output full warning once per buffer, if that
+    if (blockIdx.x == 0) {
+      // Only output full warning once per kernel call, if that
       printf("WARNING: Packet has invalid pkt_samples = %u in header\n", meta->pkt_samples);
     }
     //  I for invalid, since if this happens it can happen a lot make it very terse
@@ -116,8 +116,8 @@ __global__ void place_packet_data_kernel(
       }
     } else {
       if (threadIdx.x == 0) {
-        if (sample_idx == 0) {
-          // Only output full warning once per buffer, if that
+        if (blockIdx.x == 0) {
+          // Only output full warning once per kernel call, if that
           printf(
               "WARNING: Packet with sample_idx = %llu implies an old buffer_idx: %llu (current: "
               "%llu). "

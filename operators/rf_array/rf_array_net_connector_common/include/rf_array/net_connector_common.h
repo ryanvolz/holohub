@@ -23,6 +23,7 @@
 
 #include <linux/if_ether.h>
 #include <linux/udp.h>
+#include <matx.h>
 #include <netinet/ip.h>
 
 #include "holoscan/holoscan.hpp"
@@ -249,8 +250,7 @@ struct BufferTracking {
     cudaError_t err;
     size_t buf_idx = completed_pos % buffer_size;
 
-    auto dropped_iq_samples = (num_samples * num_subchannels) - sample_cnt_h[buf_idx];
-    auto dropped_samples = dropped_iq_samples / num_subchannels;
+    auto dropped_samples = num_samples - sample_cnt_h[buf_idx];
 
     if (total_output_samples == 0) {
       // We haven't output any samples yet, so set start_sample_idx
@@ -282,7 +282,7 @@ struct BufferTracking {
     pos = completed_pos + 1;
 
     // Update total and dropped sample count
-    total_output_samples += (sample_cnt_h[buf_idx] / num_subchannels);
+    total_output_samples += sample_cnt_h[buf_idx];
     total_dropped_samples += dropped_samples;
 
     // Reset the tracking values and copy to device memory in sync with all relevant streams
@@ -401,10 +401,10 @@ struct BufferTracking {
   }
 };
 
-void place_packet_data(sample_t* out, RFMetadata* out_metadata, void* const* const in,
-                       int* sample_cnt, bool* received_end, unsigned long long int* buffer_counter,
-                       const uint32_t num_pkts, const uint16_t buffer_size,
-                       const uint32_t num_samples, const uint16_t num_subchannels,
+template <typename SampleT>
+void place_packet_data(matx::tensor_t<SampleT, 3>& out, RFMetadata* out_metadata,
+                       void* const* const in, int* sample_cnt, bool* received_end,
+                       unsigned long long int* buffer_counter, const uint32_t num_pkts,
                        const uint32_t max_samples_per_packet, const double freq_idx_scaling,
                        const double freq_idx_offset, const bool apply_conjugate,
                        const RFPacketHeader* spoof_header, const uint64_t total_pkts,

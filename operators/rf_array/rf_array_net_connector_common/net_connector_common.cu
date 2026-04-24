@@ -17,43 +17,58 @@
 
 #include <stdio.h>
 
+#include <matx.h>
+
 #include "rf_array/net_connector_common.h"
 #include "rf_array/rf_array.h"
 
+template <typename SampleT>
 __global__ void place_packet_data_kernel(
-    sample_t* out, RFMetadata* out_metadata, const void* const* const __restrict__ in,
-    int* sample_cnt, bool* received_end, unsigned long long int* buffer_counter,
-    const uint16_t buffer_size, const uint32_t num_samples, const uint16_t num_subchannels,
-    const uint32_t max_samples_per_packet, const double freq_idx_scaling,
-    const double freq_idx_offset, bool apply_conjugate, const RFPacketHeader* spoof_header,
-    const uint64_t total_pkts, const uint16_t packet_skip_bytes) {
-  const uint32_t sample_stride = static_cast<uint32_t>(num_subchannels);
-  const uint32_t buffer_stride = sample_stride * num_samples;
+    typename matx::detail::base_type_t<matx::tensor_t<SampleT, 3>> out, RFMetadata* out_metadata,
+    const void* const* const __restrict__ in, int* sample_cnt, bool* received_end,
+    unsigned long long int* buffer_counter, const uint32_t max_samples_per_packet,
+    const double freq_idx_scaling, const double freq_idx_offset, const bool apply_conjugate,
+    const RFPacketHeader* spoof_header, const uint64_t total_pkts,
+    const uint16_t packet_skip_bytes) {
+  const auto buffer_size = out.Size(0);
+  const auto num_samples = out.Size(1);
+  const auto num_subchannels = out.Size(2);
   const uint32_t pkt_idx = blockIdx.x;
 
   // Warmup
-  if (out == nullptr) return;
+  if (in == nullptr) {
+    return;
+  }
 
   const RFPacketHeader* meta;
-  const sample_t* samples;
+  const SampleT* samples;
   if (spoof_header == nullptr) {
     meta = reinterpret_cast<const RFPacketHeader*>(in[pkt_idx]);
-    samples = reinterpret_cast<const sample_t*>(meta + 1);
+    samples = reinterpret_cast<const SampleT*>(meta + 1);
   } else {
     // Use spoofed header and generate sample index from the packet count, assuming
     // all of the packets are arriving in order
     RFPacketHeader meta_obj = *spoof_header;
     meta_obj.sample_idx += static_cast<uint64_t>(meta_obj.pkt_samples * (total_pkts + pkt_idx));
     meta = &meta_obj;
-    samples = reinterpret_cast<const sample_t*>(reinterpret_cast<const char*>(in[pkt_idx]) +
-                                                packet_skip_bytes);
+    samples = reinterpret_cast<const SampleT*>(reinterpret_cast<const char*>(in[pkt_idx]) +
+                                               packet_skip_bytes);
   }
 
   if (threadIdx.x == 0 && meta->pkt_samples > max_samples_per_packet) {
-    const uint16_t buffer_idx_tmp = (meta->sample_idx / num_samples) % buffer_size;
     if (blockIdx.x == 0) {
       // Only output full warning once per kernel call, if that
       printf("WARNING: Packet has invalid pkt_samples = %u in header\n", meta->pkt_samples);
+    }
+    //  I for invalid, since if this happens it can happen a lot make it very terse
+    printf("I");
+  }
+  if (threadIdx.x == 0 && meta->num_subchannels != num_subchannels) {
+    if (blockIdx.x == 0) {
+      // Only output full warning once per kernel call, if that
+      printf("WARNING: Packet has invalid num_subchannels = %u != %u in header\n",
+             meta->num_subchannels,
+             static_cast<uint32_t>(num_subchannels));
     }
     //  I for invalid, since if this happens it can happen a lot make it very terse
     printf("I");
@@ -76,18 +91,13 @@ __global__ void place_packet_data_kernel(
 
     // Write samples only if they are not old
     if (global_buffer_idx >= buffer_counter[buffer_idx]) {
-      // Compute pointer in buffer memory
-      uint32_t buffer_start = buffer_idx * buffer_stride;
-      uint32_t sample_start = sample_idx * sample_stride;
-
       // Copy data
-      // (initialize i so that each thread always writes to same spots in buffer)
-      for (uint32_t i = (threadIdx.x - sample_start) % blockDim.x;
-           i < samples_to_write * num_subchannels;
-           i += blockDim.x) {
-        out[buffer_start + sample_start + i] = samples[pkt_iq_idx + i];
-        if (apply_conjugate) {
-          out[buffer_start + sample_start + i].i *= -1;
+      for (uint32_t i = threadIdx.x; i < samples_to_write; i += blockDim.x) {
+        for (uint32_t j = 0; j < num_subchannels; j++) {
+          out(buffer_idx, sample_idx + i, j) = samples[pkt_iq_idx + i * num_subchannels + j];
+          if (apply_conjugate) {
+            out(buffer_idx, sample_idx + i, j).i *= -1;
+          }
         }
       }
 
@@ -108,9 +118,9 @@ __global__ void place_packet_data_kernel(
         }
 
         // todo Smarter way than atomicAdd
-        atomicAdd(&sample_cnt[buffer_idx], samples_to_write * num_subchannels);
+        atomicAdd(&sample_cnt[buffer_idx], samples_to_write);
 
-        if (sample_cnt[buffer_idx] >= num_subchannels * num_samples) {
+        if (sample_cnt[buffer_idx] >= num_samples) {
           received_end[buffer_idx] = true;
         }
       }
@@ -137,30 +147,33 @@ __global__ void place_packet_data_kernel(
   }
 }
 
-void place_packet_data(sample_t* out, RFMetadata* out_metadata, void* const* const in,
-                       int* sample_cnt, bool* received_end, unsigned long long int* buffer_counter,
-                       const uint32_t num_pkts, const uint16_t buffer_size,
-                       const uint32_t num_samples, const uint16_t num_subchannels,
+template <typename SampleT>
+void place_packet_data(matx::tensor_t<SampleT, 3>& out, RFMetadata* out_metadata,
+                       void* const* const in, int* sample_cnt, bool* received_end,
+                       unsigned long long int* buffer_counter, const uint32_t num_pkts,
                        const uint32_t max_samples_per_packet, const double freq_idx_scaling,
-                       const double freq_idx_offset, bool apply_conjugate,
+                       const double freq_idx_offset, const bool apply_conjugate,
                        const RFPacketHeader* spoof_header, const uint64_t total_pkts,
                        const uint16_t packet_skip_bytes, cudaStream_t stream) {
   // Each block processes an individual packet
-  place_packet_data_kernel<<<num_pkts, 128, buffer_size * sizeof(int), stream>>>(
-      out,
-      out_metadata,
-      in,
-      sample_cnt,
-      received_end,
-      buffer_counter,
-      buffer_size,
-      num_samples,
-      num_subchannels,
-      max_samples_per_packet,
-      freq_idx_scaling,
-      freq_idx_offset,
-      apply_conjugate,
-      spoof_header,
-      total_pkts,
-      packet_skip_bytes);
+  place_packet_data_kernel<SampleT><<<num_pkts, 128, 0, stream>>>(out,
+                                                                  out_metadata,
+                                                                  in,
+                                                                  sample_cnt,
+                                                                  received_end,
+                                                                  buffer_counter,
+                                                                  max_samples_per_packet,
+                                                                  freq_idx_scaling,
+                                                                  freq_idx_offset,
+                                                                  apply_conjugate,
+                                                                  spoof_header,
+                                                                  total_pkts,
+                                                                  packet_skip_bytes);
 }
+
+template void place_packet_data<sample_t>(
+    matx::tensor_t<sample_t, 3>& out, RFMetadata* out_metadata, void* const* const in,
+    int* sample_cnt, bool* received_end, unsigned long long int* buffer_counter,
+    const uint32_t num_pkts, const uint32_t max_samples_per_packet, const double freq_idx_scaling,
+    const double freq_idx_offset, const bool apply_conjugate, const RFPacketHeader* spoof_header,
+    const uint64_t total_pkts, const uint16_t packet_skip_bytes, cudaStream_t stream);

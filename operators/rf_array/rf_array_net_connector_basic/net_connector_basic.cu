@@ -184,33 +184,11 @@ void NetConnectorBasic::initialize() {
 
     cudaStreamCreateWithFlags(&streams_[n], cudaStreamNonBlocking);
     cudaEventCreate(&events_[n]);
-    // Warmup
-    place_packet_data(nullptr,
-                      nullptr,
-                      nullptr,
-                      0,
-                      0,
-                      0,
-                      16,
-                      16,
-                      0,
-                      0,
-                      0,
-                      0,
-                      0,
-                      false,
-                      nullptr,
-                      0,
-                      0,
-                      streams_[n]);
-    if (cudaStreamSynchronize(streams_[n]) != cudaSuccess) {
-      HOLOSCAN_LOG_ERROR(cudaGetErrorString(cudaGetLastError()));
-      exit(1);
-    }
   }
 
   buffer_track =
       BufferTracking(buffer_size_.get(), num_samples_.get(), num_subchannels_.get(), streams_);
+
   matx::make_tensor(rf_data, {buffer_size_.get(), num_samples_.get(), num_subchannels_.get()});
 
   HOLOSCAN_CUDA_CALL(cudaMallocHost(&rf_metadata_h, buffer_size_.get() * sizeof(RFMetadata)));
@@ -223,6 +201,29 @@ void NetConnectorBasic::initialize() {
 
   if (cudaGetLastError() != cudaSuccess) {
     exit(1);
+  }
+
+  for (int n = 0; n < batch_capacity_.get(); n++) {
+    // Warmup
+    place_packet_data(rf_data,
+                      rf_metadata_d,
+                      nullptr,
+                      buffer_track.sample_cnt_d,
+                      buffer_track.received_end_d,
+                      buffer_track.counter_d,
+                      16,
+                      max_samples_per_packet,
+                      freq_idx_scaling_.get(),
+                      freq_idx_offset_.get(),
+                      apply_conjugate_.get(),
+                      spoof_header_d,
+                      ttl_bytes_recv_,
+                      packet_skip_bytes_.get(),
+                      streams_[n]);
+    if (cudaStreamSynchronize(streams_[n]) != cudaSuccess) {
+      HOLOSCAN_LOG_ERROR(cudaGetErrorString(cudaGetLastError()));
+      exit(1);
+    }
   }
 
   HOLOSCAN_LOG_INFO("NetConnectorBasic::initialize() complete");
@@ -296,11 +297,10 @@ void NetConnectorBasic::check_completed_and_queue_arrays(OutputContext& op_outpu
     op_output.emit(out_ptr, "rf_out");
     last_emit = std::chrono::steady_clock::now();
 
-    HOLOSCAN_LOG_DEBUG(
-        "Emitting sample buffer {} with {} IQ samples from internal staging buffer {}",
-        buffer_track.counter_h[buf_idx],
-        buffer_track.sample_cnt_h[buf_idx],
-        buf_idx);
+    HOLOSCAN_LOG_DEBUG("Emitting sample buffer {} with {} samples from internal staging buffer {}",
+                       buffer_track.counter_h[buf_idx],
+                       buffer_track.sample_cnt_h[buf_idx],
+                       buf_idx);
 
     // Synchronize completed_batch_stream with op_stream so we know data copying is done before
     // resetting the buffer and continuing with further packet copying on the batch streams
@@ -395,16 +395,13 @@ void NetConnectorBasic::compute(InputContext& op_input, OutputContext& op_output
         } while (out_q.size() >= batch_capacity_.get());
 
         // Copy packet I/Q contents to appropriate location in 'rf_data'
-        place_packet_data(rf_data.Data(),
+        place_packet_data(rf_data,
                           rf_metadata_d,
                           h_dev_ptrs_[cur_idx],
                           buffer_track.sample_cnt_d,
                           buffer_track.received_end_d,
                           buffer_track.counter_d,
                           aggr_pkts_recv_,
-                          buffer_size_.get(),
-                          num_samples_.get(),
-                          num_subchannels_.get(),
                           max_samples_per_packet,
                           freq_idx_scaling_.get(),
                           freq_idx_offset_.get(),

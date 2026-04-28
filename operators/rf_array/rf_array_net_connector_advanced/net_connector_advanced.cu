@@ -211,8 +211,7 @@ void NetConnectorAdvanced::initialize() {
     cudaEventCreate(&events_[n]);
   }
 
-  buffer_track =
-      BufferTracking(buffer_size_.get(), num_samples_.get(), num_subchannels_.get(), streams_);
+  buffer_track = BufferTracking(buffer_size_.get(), num_samples_.get());
   matx::make_tensor(rf_data, {buffer_size_.get(), num_samples_.get(), num_subchannels_.get()});
 
   HOLOSCAN_CUDA_CALL(cudaMallocHost(&rf_metadata_h, buffer_size_.get() * sizeof(RFMetadata)));
@@ -233,8 +232,9 @@ void NetConnectorAdvanced::initialize() {
                       rf_metadata_d,
                       nullptr,
                       buffer_track.sample_cnt_d,
-                      buffer_track.received_end_d,
+                      buffer_track.full_cnt_d,
                       buffer_track.counter_d,
+                      buffer_track.completed_pos_d,
                       16,
                       max_samples_per_packet,
                       freq_idx_scaling_.get(),
@@ -256,10 +256,18 @@ void NetConnectorAdvanced::initialize() {
 void NetConnectorAdvanced::freeResources() {
   HOLOSCAN_LOG_INFO("NetConnectorAdvanced::freeResources() start");
   for (int n = 0; n < batch_capacity_.get(); n++) {
-    if (full_batch_data_h_[n]) { cudaFreeHost(full_batch_data_h_[n]); }
-    if (h_dev_ptrs_[n]) { cudaFreeHost(h_dev_ptrs_[n]); }
-    if (streams_[n]) { cudaStreamDestroy(streams_[n]); }
-    if (events_[n]) { cudaEventDestroy(events_[n]); }
+    if (full_batch_data_h_[n]) {
+      cudaFreeHost(full_batch_data_h_[n]);
+    }
+    if (h_dev_ptrs_[n]) {
+      cudaFreeHost(h_dev_ptrs_[n]);
+    }
+    if (streams_[n]) {
+      cudaStreamDestroy(streams_[n]);
+    }
+    if (events_[n]) {
+      cudaEventDestroy(events_[n]);
+    }
   }
   buffer_track.free_memory();
   if (rf_metadata_h) {
@@ -268,7 +276,9 @@ void NetConnectorAdvanced::freeResources() {
   if (rf_metadata_d) {
     cudaFree(rf_metadata_d);
   }
-  if (spoof_header_d) { cudaFree(spoof_header_d); }
+  if (spoof_header_d) {
+    cudaFree(spoof_header_d);
+  }
   HOLOSCAN_LOG_INFO("NetConnectorAdvanced::freeResources() complete");
 }
 
@@ -298,14 +308,14 @@ void NetConnectorAdvanced::free_bufs_and_queue_arrays(OutputContext& op_output,
   if (completed_msgs.empty()) {
     return;
   }
-  cudaStream_t completed_batch_stream = completed_msgs[0].stream;
 
   for (size_t i = 0; i < buffer_track.buffer_size; i++) {
     const size_t pos_wrap = (buffer_track.pos + i) % buffer_track.buffer_size;
-    HOLOSCAN_LOG_TRACE("Buffer {}: cnt {} (end {})",
+    HOLOSCAN_LOG_TRACE("Buffer {}: sample_cnt {} (full_cnt {}); completed_pos {}",
                        buffer_track.counter_h[pos_wrap],
                        buffer_track.sample_cnt_h[pos_wrap],
-                       buffer_track.received_end_h[pos_wrap]);
+                       buffer_track.full_cnt_h[pos_wrap],
+                       *buffer_track.completed_pos_h);
   }
 
   auto buf_idx = buffer_track.find_ready_idx(buffer_track.find_start_idx());
@@ -326,25 +336,17 @@ void NetConnectorAdvanced::free_bufs_and_queue_arrays(OutputContext& op_output,
 
     HOLOSCAN_LOG_DEBUG("Emitting sample buffer {} with {} samples from internal staging buffer {}",
                        buffer_track.counter_h[buf_idx],
-                       buffer_track.sample_cnt_h[buf_idx],
+                       buffer_track.full_cnt_h[buf_idx],
                        buf_idx);
-
-    // Synchronize completed_batch_stream with op_stream so we know data copying is done before
-    // resetting the buffer and continuing with further packet copying on the batch streams
-    cudaEvent_t op_stream_done;
-    cudaEventCreate(&op_stream_done);
-    cudaEventRecord(op_stream_done, op_stream);
-    cudaStreamWaitEvent(completed_batch_stream, op_stream_done);
 
     // Reset data buffer to 0 after data is copied out
     auto real_shp = out_data_slice.Shape();
     real_shp[1] = 2 * real_shp[1];
     auto out_data_int_view = out_data_slice.View<real_t, 2, typeof(real_shp)>(std::move(real_shp));
-    (out_data_int_view = matx::zeros()).run(completed_batch_stream);
+    (out_data_int_view = matx::zeros()).run(op_stream);
 
-    // Set buffer to next position after the one just completed and update all tracking info
-    HOLOSCAN_CUDA_CALL(
-        buffer_track.completed_at_pos(buffer_track.counter_h[buf_idx], completed_batch_stream));
+    // Set buffer to next position after the one just completed and signal to kernel
+    buffer_track.completed_at_pos(buffer_track.counter_h[buf_idx], op_stream);
     HOLOSCAN_LOG_TRACE("Next sample cycle expected: {}", buffer_track.pos);
 
     // See if we have another buffer ready
@@ -397,7 +399,8 @@ void NetConnectorAdvanced::compute(InputContext& op_input, OutputContext& op_out
       // processing, so wait for the corresponding event to complete
       if (cudaEventQuery(events_[cur_idx]) != cudaSuccess) {
         HOLOSCAN_LOG_DEBUG("Waiting on event to clear batch with index {}", cur_idx);
-        HOLOSCAN_CUDA_CALL(cudaEventSynchronize(events_[cur_idx]));
+        HOLOSCAN_CUDA_CALL_THROW_ERROR(cudaEventSynchronize(events_[cur_idx]),
+                                       "Failed to synchronize on cleared batch");
       }
 
       auto num_pkts_to_copy =
@@ -471,7 +474,9 @@ void NetConnectorAdvanced::compute(InputContext& op_input, OutputContext& op_out
       aggr_pkts_recv_ += num_pkts_to_copy;
       burst_pkts_remaining -= num_pkts_to_copy;
       // If we're finished with the packet burst, then add it to the current message to be released
-      if (burst_pkts_remaining == 0) { cur_msg_.msg[cur_msg_.num_batches++] = burst; }
+      if (burst_pkts_remaining == 0) {
+        cur_msg_.msg[cur_msg_.num_batches++] = burst;
+      }
 
       // Once we've aggregated enough packets, do some work
       if (aggr_pkts_recv_ >= batch_size_.get()) {
@@ -499,8 +504,9 @@ void NetConnectorAdvanced::compute(InputContext& op_input, OutputContext& op_out
                           rf_metadata_d,
                           h_dev_ptrs_[cur_idx],
                           buffer_track.sample_cnt_d,
-                          buffer_track.received_end_d,
+                          buffer_track.full_cnt_d,
                           buffer_track.counter_d,
+                          buffer_track.completed_pos_d,
                           aggr_pkts_recv_,
                           max_samples_per_packet,
                           freq_idx_scaling_.get(),
@@ -510,23 +516,6 @@ void NetConnectorAdvanced::compute(InputContext& op_input, OutputContext& op_out
                           ttl_pkts_recv_,            // only needed if spoofing packets
                           packet_skip_bytes_.get(),  // only needed if spoofing packets
                           streams_[cur_idx]);
-        // Get updated buffer tracking information back to host
-        buffer_track.transfer(cudaMemcpyDeviceToHost, streams_[cur_idx]);
-        // Get updated rf_metadata buffer back to host
-        HOLOSCAN_CUDA_CALL(cudaMemcpyAsync(rf_metadata_h,
-                                           rf_metadata_d,
-                                           buffer_size_.get() * sizeof(RFMetadata),
-                                           cudaMemcpyDeviceToHost,
-                                           streams_[cur_idx]));
-
-        HOLOSCAN_CUDA_CALL(cudaEventRecord(events_[cur_idx], streams_[cur_idx]));
-        cur_msg_.stream = streams_[cur_idx];
-        cur_msg_.evt = events_[cur_idx];
-        out_q.push(cur_msg_);
-        cur_msg_.num_batches = 0;
-
-        ttl_pkts_recv_ += aggr_pkts_recv_;
-
         auto cuda_err_status = cudaGetLastError();
         if (cuda_err_status != cudaSuccess) {
           HOLOSCAN_LOG_ERROR(
@@ -537,6 +526,24 @@ void NetConnectorAdvanced::compute(InputContext& op_input, OutputContext& op_out
               cudaGetErrorString(cuda_err_status));
           exit(1);
         }
+        // Get updated buffer tracking information back to host
+        buffer_track.transfer(streams_[cur_idx]);
+        // Get updated rf_metadata buffer back to host
+        HOLOSCAN_CUDA_CALL_THROW_ERROR(cudaMemcpyAsync(rf_metadata_h,
+                                                       rf_metadata_d,
+                                                       buffer_size_.get() * sizeof(RFMetadata),
+                                                       cudaMemcpyDeviceToHost,
+                                                       streams_[cur_idx]),
+                                       "Failed to transfer rf_metadata");
+
+        HOLOSCAN_CUDA_CALL_THROW_ERROR(cudaEventRecord(events_[cur_idx], streams_[cur_idx]),
+                                       "Failed to record place_packet_data completed event");
+        cur_msg_.stream = streams_[cur_idx];
+        cur_msg_.evt = events_[cur_idx];
+        out_q.push(cur_msg_);
+        cur_msg_.num_batches = 0;
+
+        ttl_pkts_recv_ += aggr_pkts_recv_;
         aggr_pkts_recv_ = 0;
         cur_idx = (++cur_idx % batch_capacity_.get());
       }

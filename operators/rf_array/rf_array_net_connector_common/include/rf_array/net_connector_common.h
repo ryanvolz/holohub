@@ -96,66 +96,55 @@ inline void spoofed_packet_header_from_map(RFPacketHeader* meta,
 
 // Tracks the status of filling an RF array
 struct BufferTracking {
-  size_t pos;
+  unsigned long long pos;
   size_t buffer_size;
   uint32_t num_samples;
-  uint16_t num_subchannels;
   uint64_t start_sample_idx;
   uint64_t total_output_samples;
   uint64_t total_dropped_samples;
-  std::vector<cudaStream_t> streams_to_sync;
-  std::vector<cudaEvent_t> sync_events;
-  std::vector<std::tuple<BufferTracking*, size_t, unsigned long long int>> reset_tuples;
   int* sample_cnt_h;
   int* sample_cnt_d;
-  bool* received_end_h;
-  bool* received_end_d;
+  int* full_cnt_h;
+  int* full_cnt_d;
   unsigned long long int* counter_h;
   unsigned long long int* counter_d;
+  unsigned long long int* completed_pos_h;
+  unsigned long long int* completed_pos_d;
 
   BufferTracking() = default;
-  explicit BufferTracking(const size_t _buffer_size, const uint32_t _num_samples,
-                          const uint16_t _num_subchannels,
-                          std::vector<cudaStream_t> _streams_to_sync)
+  explicit BufferTracking(const size_t _buffer_size, const uint32_t _num_samples)
       : pos(0),
         buffer_size(_buffer_size),
         num_samples(_num_samples),
-        num_subchannels(_num_subchannels),
-        streams_to_sync(_streams_to_sync),
         start_sample_idx(0),
         total_output_samples(0),
         total_dropped_samples(0) {
-    // Create sync events for each stream plus an extra one for syncing Host to Device copy
-    for (auto i = 0; i < streams_to_sync.size() + 1; i++) {
-      cudaEvent_t evt;
-      cudaEventCreate(&evt);
-      sync_events.push_back(evt);
-    }
-
-    // Need place to hold what we're passing by pointer to the reset callback
-    reset_tuples.resize(buffer_size);
-
     // Reserve sample count
     cudaMallocHost((void**)&sample_cnt_h, buffer_size * sizeof(int));
     cudaMalloc((void**)&sample_cnt_d, buffer_size * sizeof(int));
     memset(sample_cnt_h, 0, buffer_size * sizeof(int));
     cudaMemset(sample_cnt_d, 0, buffer_size * sizeof(int));
 
-    // Reserve end-of-array signal
-    cudaMallocHost((void**)&received_end_h, buffer_size * sizeof(bool));
-    cudaMalloc((void**)&received_end_d, buffer_size * sizeof(bool));
-    memset(received_end_h, 0, buffer_size * sizeof(bool));
-    cudaMemset(received_end_d, 0, buffer_size * sizeof(bool));
+    // Reserve end-of-array signal (initialized to 1 so kernel initiates reset on start)
+    cudaMallocHost((void**)&full_cnt_h, buffer_size * sizeof(int));
+    cudaMalloc((void**)&full_cnt_d, buffer_size * sizeof(int));
+    memset(full_cnt_h, 1, buffer_size * sizeof(int));
+    cudaMemset(full_cnt_d, 1, buffer_size * sizeof(int));
 
-    // Reserve buffer counter
+    // Reserve current buffer counter
     cudaMallocHost((void**)&counter_h, buffer_size * sizeof(unsigned long long int));
     cudaMalloc((void**)&counter_d, buffer_size * sizeof(unsigned long long int));
     memset(counter_h, 0, buffer_size * sizeof(unsigned long long int));
     cudaMemset(counter_d, 0, buffer_size * sizeof(unsigned long long int));
+
+    // Reserve filled buffer position
+    cudaMallocHost((void**)&completed_pos_h, sizeof(unsigned long long int));
+    cudaMalloc((void**)&completed_pos_d, sizeof(unsigned long long int));
+    memset(completed_pos_h, 0, sizeof(unsigned long long int));
+    cudaMemset(completed_pos_d, 0, sizeof(unsigned long long int));
   }
 
   void free_memory() {
-    for (auto evt : sync_events) { cudaEventDestroy(evt); }
     if (sample_cnt_h) {
       cudaFreeHost(sample_cnt_h);
       sample_cnt_h = nullptr;
@@ -164,13 +153,13 @@ struct BufferTracking {
       cudaFree(sample_cnt_d);
       sample_cnt_d = nullptr;
     }
-    if (received_end_h) {
-      cudaFreeHost(received_end_h);
-      received_end_h = nullptr;
+    if (full_cnt_h) {
+      cudaFreeHost(full_cnt_h);
+      full_cnt_h = nullptr;
     }
-    if (received_end_d) {
-      cudaFree(received_end_d);
-      received_end_d = nullptr;
+    if (full_cnt_d) {
+      cudaFree(full_cnt_d);
+      full_cnt_d = nullptr;
     }
     if (counter_h) {
       cudaFreeHost(counter_h);
@@ -180,77 +169,53 @@ struct BufferTracking {
       cudaFree(counter_d);
       counter_d = nullptr;
     }
+    if (completed_pos_h) {
+      cudaFreeHost(completed_pos_h);
+      completed_pos_h = nullptr;
+    }
+    if (completed_pos_d) {
+      cudaFree(completed_pos_d);
+      completed_pos_d = nullptr;
+    }
   }
 
-  cudaError_t transferSamples(const cudaMemcpyKind kind, cudaStream_t stream) {
-    void* src;
-    void* dst;
-
-    if (kind == cudaMemcpyHostToDevice) {
-      src = sample_cnt_h;
-      dst = sample_cnt_d;
-    } else {
-      src = sample_cnt_d;
-      dst = sample_cnt_h;
-    }
-    return HOLOSCAN_CUDA_CALL(cudaMemcpyAsync(dst, src, buffer_size * sizeof(int), kind, stream));
+  // TODO: Faster way than separate memcpy's?
+  void transfer(cudaStream_t stream) {
+    HOLOSCAN_CUDA_CALL_THROW_ERROR(
+        cudaMemcpyAsync(
+            sample_cnt_h, sample_cnt_d, buffer_size * sizeof(int), cudaMemcpyDeviceToHost, stream),
+        "Failed to transfer sample_cnt");
+    HOLOSCAN_CUDA_CALL_THROW_ERROR(
+        cudaMemcpyAsync(
+            full_cnt_h, full_cnt_d, buffer_size * sizeof(int), cudaMemcpyDeviceToHost, stream),
+        "Failed to transfer full_cnt");
+    HOLOSCAN_CUDA_CALL_THROW_ERROR(cudaMemcpyAsync(counter_h,
+                                                   counter_d,
+                                                   buffer_size * sizeof(unsigned long long int),
+                                                   cudaMemcpyDeviceToHost,
+                                                   stream),
+                                   "Failed to transfer buffer_counter");
+    HOLOSCAN_CUDA_CALL_THROW_ERROR(cudaMemcpyAsync(completed_pos_h,
+                                                   completed_pos_d,
+                                                   sizeof(unsigned long long int),
+                                                   cudaMemcpyDeviceToHost,
+                                                   stream),
+                                   "Failed to transfer completed_pos");
   }
 
-  cudaError_t transferEndArray(const cudaMemcpyKind kind, cudaStream_t stream) {
-    void* src;
-    void* dst;
-
-    if (kind == cudaMemcpyHostToDevice) {
-      src = received_end_h;
-      dst = received_end_d;
-    } else if (kind == cudaMemcpyDeviceToHost) {
-      src = received_end_d;
-      dst = received_end_h;
-    } else {
-      HOLOSCAN_LOG_ERROR("Unknown option {}", fmt::underlying(kind));
-      return cudaErrorInvalidValue;
-    }
-    return HOLOSCAN_CUDA_CALL(cudaMemcpyAsync(dst, src, buffer_size * sizeof(bool), kind, stream));
-  }
-
-  cudaError_t transferCounters(const cudaMemcpyKind kind, cudaStream_t stream) {
-    void* src;
-    void* dst;
-
-    if (kind == cudaMemcpyHostToDevice) {
-      src = counter_h;
-      dst = counter_d;
-    } else {
-      src = counter_d;
-      dst = counter_h;
-    }
-    return HOLOSCAN_CUDA_CALL(
-        cudaMemcpyAsync(dst, src, buffer_size * sizeof(unsigned long long int), kind, stream));
-  }
-
-  // TODO: Faster way than three separate memcpy's?
-  cudaError_t transfer(const cudaMemcpyKind kind, cudaStream_t stream) {
-    cudaError_t err;
-    err = transferSamples(kind, stream);
-    if (err != cudaSuccess) {
-      return err;
-    }
-    err = transferEndArray(kind, stream);
-    if (err != cudaSuccess) {
-      return err;
-    }
-    err = transferCounters(kind, stream);
-    if (err != cudaSuccess) {
-      return err;
-    }
-    return cudaSuccess;
-  }
-
-  cudaError_t completed_at_pos(size_t completed_pos, cudaStream_t stream) {
-    cudaError_t err;
+  void completed_at_pos(size_t completed_pos, cudaStream_t stream) {
     size_t buf_idx = completed_pos % buffer_size;
 
-    auto dropped_samples = num_samples - sample_cnt_h[buf_idx];
+    // Signal to kernel that data copy is complete by copying this buffer's counter into
+    // the kernel's completed_pos following the copy command in the stream
+    HOLOSCAN_CUDA_CALL_THROW_ERROR(cudaMemcpyAsync(completed_pos_d,
+                                                   &counter_d[buf_idx],
+                                                   sizeof(unsigned long long int),
+                                                   cudaMemcpyDeviceToDevice,
+                                                   stream),
+                                   "Failed to transfter buffer_counter to completed_pos");
+
+    auto dropped_samples = num_samples - full_cnt_h[buf_idx];
 
     if (total_output_samples == 0) {
       // We haven't output any samples yet, so set start_sample_idx
@@ -282,70 +247,9 @@ struct BufferTracking {
     pos = completed_pos + 1;
 
     // Update total and dropped sample count
-    total_output_samples += sample_cnt_h[buf_idx];
+    total_output_samples += full_cnt_h[buf_idx];
     total_dropped_samples += dropped_samples;
-
-    // Reset the tracking values and copy to device memory in sync with all relevant streams
-    // Have stream that we will copy on wait on all the other buffer streams
-    for (auto i = 0; i < streams_to_sync.size(); i++) {
-      auto sync_stream = streams_to_sync[i];
-      auto sync_event = sync_events[i];
-      cudaEventRecord(sync_event, sync_stream);
-      cudaStreamWaitEvent(stream, sync_event);
-    }
-    // Reset the tracking values locally (for continuing tracking loop now) and do it again
-    // once the streams are synced (in case the reset values are rewritten from the device)
-    reset_tuples[buf_idx] = std::make_tuple(this, buf_idx, counter_h[buf_idx] + buffer_size);
-    reset_fun(&reset_tuples[buf_idx]);
-    err = HOLOSCAN_CUDA_CALL(cudaLaunchHostFunc(stream, reset_fun, &reset_tuples[buf_idx]));
-    if (err != cudaSuccess) {
-      return err;
-    }
-    // Do the transfers on the stream, but only of the values at buf_idx to better avoid races
-    err = HOLOSCAN_CUDA_CALL(cudaMemcpyAsync(&sample_cnt_d[buf_idx],
-                                             &sample_cnt_h[buf_idx],
-                                             sizeof(int),
-                                             cudaMemcpyHostToDevice,
-                                             stream));
-    if (err != cudaSuccess) {
-      return err;
-    }
-    err = HOLOSCAN_CUDA_CALL(cudaMemcpyAsync(&received_end_d[buf_idx],
-                                             &received_end_h[buf_idx],
-                                             sizeof(bool),
-                                             cudaMemcpyHostToDevice,
-                                             stream));
-    if (err != cudaSuccess) {
-      return err;
-    }
-    err = HOLOSCAN_CUDA_CALL(cudaMemcpyAsync(&counter_d[buf_idx],
-                                             &counter_h[buf_idx],
-                                             sizeof(unsigned long long int),
-                                             cudaMemcpyHostToDevice,
-                                             stream));
-    if (err != cudaSuccess) {
-      return err;
-    }
-    // Sync all the other buffer streams to the completion of the transfer, so they have
-    // an accurate account of the buffer tracking
-    cudaEventRecord(sync_events.back(), stream);
-    for (auto i = 0; i < streams_to_sync.size(); i++) {
-      auto sync_stream = streams_to_sync[i];
-      cudaStreamWaitEvent(sync_stream, sync_events.back());
-    }
-    return err;
   }
-
-  static void reset_fun(void* data) {
-    auto reset_tuple =
-        *static_cast<std::tuple<BufferTracking*, size_t, unsigned long long int>*>(data);
-    auto* self = std::get<0>(reset_tuple);
-    auto buf_idx = std::get<1>(reset_tuple);
-    auto new_counter_val = std::get<2>(reset_tuple);
-    self->received_end_h[buf_idx] = false;
-    self->sample_cnt_h[buf_idx] = 0;
-    self->counter_h[buf_idx] = new_counter_val;
-  };
 
   size_t find_start_idx() {
     if (pos != 0) {
@@ -370,7 +274,7 @@ struct BufferTracking {
       const size_t buf_idx = (start_idx + i) % buffer_size;
 
       // Move to next buffer in loop if this one is completely empty
-      if (sample_cnt_h[buf_idx] == 0) {
+      if (full_cnt_h[buf_idx] == 0 && sample_cnt_h[buf_idx] == 0) {
         continue;
       }
 
@@ -379,18 +283,8 @@ struct BufferTracking {
         break;
       }
 
-      // Output the next buffer if it is either completed, the next one is completed,
-      // or packets have already been placed two buffers or more beyond
-      bool packets_seen_two_ahead_plus = false;
-      for (size_t j = 2; j < buffer_size; j++) {
-        const size_t j_buf_idx = (buf_idx + j) % buffer_size;
-        if (sample_cnt_h[j_buf_idx] > 0 && (counter_h[j_buf_idx] > counter_h[buf_idx])) {
-          packets_seen_two_ahead_plus = true;
-          break;
-        }
-      }
-      if (received_end_h[buf_idx] || received_end_h[(buf_idx + 1) % buffer_size] ||
-          packets_seen_two_ahead_plus) {
+      // Output the next buffer if it has been marked as full
+      if (full_cnt_h[buf_idx] > 0) {
         return buf_idx;
       }
       // Samples pending but nothing ready to output yet, break to return no ready index
@@ -403,8 +297,9 @@ struct BufferTracking {
 
 template <typename SampleT>
 void place_packet_data(matx::tensor_t<SampleT, 3>& out, RFMetadata* out_metadata,
-                       void* const* const in, int* sample_cnt, bool* received_end,
-                       unsigned long long int* buffer_counter, const uint32_t num_pkts,
+                       void* const* const in, int* sample_cnt, int* full_cnt,
+                       unsigned long long int* buffer_counter,
+                       unsigned long long int* completed_pos, const uint32_t num_pkts,
                        const uint32_t max_samples_per_packet, const double freq_idx_scaling,
                        const double freq_idx_offset, const bool apply_conjugate,
                        const RFPacketHeader* spoof_header, const uint64_t total_pkts,

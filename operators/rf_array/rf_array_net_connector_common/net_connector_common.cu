@@ -25,11 +25,11 @@
 template <typename SampleT>
 __global__ void place_packet_data_kernel(
     typename matx::detail::base_type_t<matx::tensor_t<SampleT, 3>> out, RFMetadata* out_metadata,
-    const void* const* const __restrict__ in, int* sample_cnt, bool* received_end,
-    unsigned long long int* buffer_counter, const uint32_t max_samples_per_packet,
-    const double freq_idx_scaling, const double freq_idx_offset, const bool apply_conjugate,
-    const RFPacketHeader* spoof_header, const uint64_t total_pkts,
-    const uint16_t packet_skip_bytes) {
+    const void* const* const __restrict__ in, int* sample_cnt, int* full_cnt,
+    unsigned long long int* buffer_counter, unsigned long long int* completed_pos,
+    const uint32_t max_samples_per_packet, const double freq_idx_scaling,
+    const double freq_idx_offset, const bool apply_conjugate, const RFPacketHeader* spoof_header,
+    const uint64_t total_pkts, const uint16_t packet_skip_bytes) {
   const auto buffer_size = out.Size(0);
   const auto num_samples = out.Size(1);
   const auto num_subchannels = out.Size(2);
@@ -89,8 +89,45 @@ __global__ void place_packet_data_kernel(
     uint32_t samples_remaining_in_packet = global_stop_sample_idx - global_sample_idx;
     uint32_t samples_to_write = min(samples_remaining_in_packet, samples_before_next_buffer);
 
-    // Write samples only if they are not old
-    if (global_buffer_idx >= buffer_counter[buffer_idx]) {
+    // Check if samples are too old to be written to the buffer
+    if (global_buffer_idx < buffer_counter[buffer_idx]) {
+      if (threadIdx.x == 0) {
+        if (blockIdx.x == 0) {
+          // Only output full warning once per kernel call, if that
+          printf(
+              "WARNING: Packet with sample_idx = %llu implies an old buffer_idx: %llu (current: "
+              "%llu). "
+              "Copying this data has been skipped.\n",
+              meta->sample_idx,
+              global_buffer_idx,
+              buffer_counter[buffer_idx]);
+        } else {
+          // L for Late or oLd, since if this happens it can happen a lot make it very terse
+          printf("L");
+        }
+      }
+      // Check if packet's samples would write into a full buffer that has not been copied out yet
+    } else if (full_cnt[buffer_idx] > 0 && buffer_counter[buffer_idx] > *completed_pos) {
+      if (threadIdx.x == 0) {
+        if (blockIdx.x == 0) {
+          // Only output full warning once per kernel call, if that
+          printf(
+              "WARNING: Samples arrived for buffer %llu which would overwrite full buffer %llu "
+              "(completed buffer position: %llu). Copying this data has been skipped.\n",
+              global_buffer_idx,
+              buffer_counter[buffer_idx],
+              *completed_pos);
+        } else {
+          // F for full
+          printf("F");
+        }
+      }
+    } else {
+      // Samples can be written to the buffer
+      // (If it was marked full with full_cnt[buffer_idx] > 0, then since we're here
+      //  buffer_counter[buffer_idx] <= *completed_pos and the data has been copied out.
+      //  If it wasn't marked full, then clearly we can write to it.)
+
       // Copy data
       for (uint32_t i = threadIdx.x; i < samples_to_write; i += blockDim.x) {
         for (uint32_t j = 0; j < num_subchannels; j++) {
@@ -102,42 +139,65 @@ __global__ void place_packet_data_kernel(
       }
 
       if (threadIdx.x == 0) {
-        // set metadata the first time we write to this buffer idx
-        // (sample_idx corresponding to the start of the output array)
-        if (atomicExch((unsigned long long int*)&out_metadata[buffer_idx].sample_idx,
-                       global_buffer_idx * num_samples) != global_buffer_idx * num_samples) {
+        // If we're writing to this buffer, then full_cnt[buffer_idx] should be 0 and
+        // buffer_counter[buffer_idx] should be global_buffer_idx.
+        if (full_cnt[buffer_idx] != 0 || buffer_counter[buffer_idx] != global_buffer_idx) {
+          // We have to ensure full_cnt is zeroed before the buffer_counter is updated
+          // to ensure that (full_cnt[buffer_idx] > 0 && buffer_counter[buffer_idx] >
+          // *completed_pos) doesn't evaluate to True for other blocks which might be racing this
+          // one for this buffer_idx which would then mistakenly think the buffer is full.
+          full_cnt[buffer_idx] = 0;
+          buffer_counter[buffer_idx] = global_buffer_idx;
+          // If either of those values was changed, then we need to reset the array metadata.
+          // (sample_cnt was already set to 0 when full_cnt was set nonzero to avoid a race now)
+          // POTENTIAL RACE NOTES:
+          // 1) The buffer counter and metadata are all the same for a given buffer_idx so
+          //    races on reading/writing those values are moot.
+          // 2) full_cnt is only incremented if the buffer completely fills (only one thread
+          //    can do this) or if it is old enough to be emitted, in which case we can accept a
+          //    race causing a slight miscount although that would be unlikely since we shouldn't
+          //    be getting packets that old.
+          out_metadata[buffer_idx].sample_idx = global_buffer_idx * num_samples;
           out_metadata[buffer_idx].sample_rate_numerator = meta->sample_rate_numerator;
           out_metadata[buffer_idx].sample_rate_denominator = meta->sample_rate_denominator;
           out_metadata[buffer_idx].center_freq =
               freq_idx_scaling * meta->freq_idx + freq_idx_offset;
-          // Also make sure the buffer counter is current (if packets are coming in order then
-          // this should only change anything when buffer counter is initially zero).
-          // (This should be safe since other threads only use the counter to determine if
-          //  samples are too old to write, and if this affects that then they were.)
-          buffer_counter[buffer_idx] = global_buffer_idx;
         }
 
-        // todo Smarter way than atomicAdd
+        // Count number of samples written to buffer across all packets / blocks
         atomicAdd(&sample_cnt[buffer_idx], samples_to_write);
 
+        // We're writing to this buffer, so consider any buffers at least two steps in the past
+        // that have samples to be full
+        auto full_buffer_idx = global_buffer_idx - 2;
+
         if (sample_cnt[buffer_idx] >= num_samples) {
-          received_end[buffer_idx] = true;
+          // If samples are not duplicated, then only one thread across the whole kernel
+          // can get here. So we don't have to do atomic operations.
+          // Signal to host that a buffer is "full" and how many valid samples it contains
+          full_cnt[buffer_idx] = sample_cnt[buffer_idx];
+          // Immediately reset the buffer sample count to 0 to avoid future race conditions
+          sample_cnt[buffer_idx] = 0;
+
+          // Since this buffer is full, now consider prior buffer full if it has samples
+          full_buffer_idx = global_buffer_idx - 1;
         }
-      }
-    } else {
-      if (threadIdx.x == 0) {
-        if (blockIdx.x == 0) {
-          // Only output full warning once per kernel call, if that
-          printf(
-              "WARNING: Packet with sample_idx = %llu implies an old buffer_idx: %llu (current: "
-              "%llu). "
-              "Copying this data has been skipped.\n",
-              meta->sample_idx,
-              global_buffer_idx,
-              buffer_counter[buffer_idx]);
+
+        // Step through prior buffers and if they are older than full_buffer_idx then
+        // consider them full by moving any pending sample_cnt to full_cnt
+        for (size_t i = 1; i < buffer_size; i++) {
+          const size_t chk_buf_idx = (buffer_idx - i) % buffer_size;
+          if (buffer_counter[chk_buf_idx] <= *completed_pos) {
+            // reached a buffer that has already been completed so we can stop checking
+            break;
+          }
+          if (buffer_counter[chk_buf_idx] <= full_buffer_idx || full_cnt[chk_buf_idx] > 0) {
+            // Increment full_cnt by sample_cnt while resetting sample_cnt to 0
+            // (if other blocks subsequently increment sample_cnt, they will end up here to add
+            //  those additional samples to full_cnt)
+            atomicAdd(&full_cnt[chk_buf_idx], atomicExch(&sample_cnt[chk_buf_idx], 0));
+          }
         }
-        // L for Late or oLd, since if this happens it can happen a lot make it very terse
-        printf("L");
       }
     }
 
@@ -149,8 +209,9 @@ __global__ void place_packet_data_kernel(
 
 template <typename SampleT>
 void place_packet_data(matx::tensor_t<SampleT, 3>& out, RFMetadata* out_metadata,
-                       void* const* const in, int* sample_cnt, bool* received_end,
-                       unsigned long long int* buffer_counter, const uint32_t num_pkts,
+                       void* const* const in, int* sample_cnt, int* full_cnt,
+                       unsigned long long int* buffer_counter,
+                       unsigned long long int* completed_pos, const uint32_t num_pkts,
                        const uint32_t max_samples_per_packet, const double freq_idx_scaling,
                        const double freq_idx_offset, const bool apply_conjugate,
                        const RFPacketHeader* spoof_header, const uint64_t total_pkts,
@@ -160,8 +221,9 @@ void place_packet_data(matx::tensor_t<SampleT, 3>& out, RFMetadata* out_metadata
                                                                   out_metadata,
                                                                   in,
                                                                   sample_cnt,
-                                                                  received_end,
+                                                                  full_cnt,
                                                                   buffer_counter,
+                                                                  completed_pos,
                                                                   max_samples_per_packet,
                                                                   freq_idx_scaling,
                                                                   freq_idx_offset,
@@ -173,7 +235,8 @@ void place_packet_data(matx::tensor_t<SampleT, 3>& out, RFMetadata* out_metadata
 
 template void place_packet_data<sample_t>(
     matx::tensor_t<sample_t, 3>& out, RFMetadata* out_metadata, void* const* const in,
-    int* sample_cnt, bool* received_end, unsigned long long int* buffer_counter,
-    const uint32_t num_pkts, const uint32_t max_samples_per_packet, const double freq_idx_scaling,
+    int* sample_cnt, int* full_cnt, unsigned long long int* buffer_counter,
+    unsigned long long int* completed_pos, const uint32_t num_pkts,
+    const uint32_t max_samples_per_packet, const double freq_idx_scaling,
     const double freq_idx_offset, const bool apply_conjugate, const RFPacketHeader* spoof_header,
     const uint64_t total_pkts, const uint16_t packet_skip_bytes, cudaStream_t stream);

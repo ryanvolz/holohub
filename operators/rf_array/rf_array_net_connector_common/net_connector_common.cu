@@ -108,8 +108,12 @@ __global__ void place_packet_data_kernel(
           printf("L");
         }
       }
-      // Check if packet's samples would write into a full buffer that has not been copied out yet
-    } else if (full_cnt[buffer_idx] > 0 && buffer_counter[buffer_idx] > *completed_pos) {
+    }
+    // Check if packet's samples would write into a full buffer that has not been copied out yet
+    // (important that condition depends only on variables that are constant for entire kernel call
+    //  or else we can have race conditions)
+    // (check completed_pos != 0 as well to skip this when kernel is first starting)
+    else if ((global_buffer_idx - *completed_pos) > buffer_size && *completed_pos != 0) {
       if (debug_print && threadIdx.x == 0) {
         if (blockIdx.x == 0) {
           // Only output full warning once per kernel call, if that
@@ -144,10 +148,6 @@ __global__ void place_packet_data_kernel(
         // If we're writing to this buffer, then full_cnt[buffer_idx] should be 0 and
         // buffer_counter[buffer_idx] should be global_buffer_idx.
         if (full_cnt[buffer_idx] != 0 || buffer_counter[buffer_idx] != global_buffer_idx) {
-          // We have to ensure full_cnt is zeroed before the buffer_counter is updated
-          // to ensure that (full_cnt[buffer_idx] > 0 && buffer_counter[buffer_idx] >
-          // *completed_pos) doesn't evaluate to True for other blocks which might be racing this
-          // one for this buffer_idx which would then mistakenly think the buffer is full.
           full_cnt[buffer_idx] = 0;
           buffer_counter[buffer_idx] = global_buffer_idx;
           // If either of those values was changed, then we need to reset the array metadata.
@@ -167,11 +167,16 @@ __global__ void place_packet_data_kernel(
         }
 
         // Count number of samples written to buffer across all packets / blocks
-        atomicAdd(&sample_cnt[buffer_idx], samples_to_write);
+        auto orig_sample_cnt = atomicAdd(&sample_cnt[buffer_idx], samples_to_write);
 
-        // We're writing to this buffer, so consider any buffers at least two steps in the past
-        // that have samples to be full
-        auto full_buffer_idx = global_buffer_idx - 2;
+        // Indicator for whether we should mark old buffers as full and how far back to do that
+        size_t mark_old_buffers = 0;
+
+        // If we're the thread to write the first sample, now we're also the thread that will
+        // go through old buffers (two prior and older) and mark any that have samples as full
+        if (orig_sample_cnt == 0) {
+          mark_old_buffers = 2;
+        }
 
         if (sample_cnt[buffer_idx] >= num_samples) {
           // If samples are not duplicated, then only one thread across the whole kernel
@@ -182,22 +187,27 @@ __global__ void place_packet_data_kernel(
           sample_cnt[buffer_idx] = 0;
 
           // Since this buffer is full, now consider prior buffer full if it has samples
-          full_buffer_idx = global_buffer_idx - 1;
+          mark_old_buffers = 1;
         }
 
-        // Step through prior buffers and if they are older than full_buffer_idx then
-        // consider them full by moving any pending sample_cnt to full_cnt
-        for (size_t i = 1; i < buffer_size; i++) {
-          const size_t chk_buf_idx = (buffer_idx - i) % buffer_size;
-          if (buffer_counter[chk_buf_idx] <= *completed_pos) {
-            // reached a buffer that has already been completed so we can stop checking
-            break;
-          }
-          if (buffer_counter[chk_buf_idx] <= full_buffer_idx || full_cnt[chk_buf_idx] > 0) {
-            // Increment full_cnt by sample_cnt while resetting sample_cnt to 0
-            // (if other blocks subsequently increment sample_cnt, they will end up here to add
-            //  those additional samples to full_cnt)
-            atomicAdd(&full_cnt[chk_buf_idx], atomicExch(&sample_cnt[chk_buf_idx], 0));
+        if (mark_old_buffers > 0) {
+          // Step through prior buffers and if they are older than full_buffer_idx then
+          // consider them full by moving any pending sample_cnt to full_cnt
+          // Only two threads can get here: the one that filled a buffer, and the one that
+          // wrote the first samples to a buffer.
+          for (size_t i = mark_old_buffers; i < buffer_size; i++) {
+            const size_t chk_buf_idx = (buffer_idx - i) % buffer_size;
+            if (buffer_counter[chk_buf_idx] <= *completed_pos ||
+                (full_cnt[chk_buf_idx] > 0 && sample_cnt[chk_buf_idx] == 0)) {
+              // reached a buffer that has already been marked full so we can stop checking
+              break;
+            }
+            if (buffer_counter[chk_buf_idx] <= global_buffer_idx - mark_old_buffers) {
+              // Increment full_cnt by sample_cnt while resetting sample_cnt to 0
+              // (if other blocks subsequently increment sample_cnt, they will end up here to add
+              //  those additional samples to full_cnt)
+              atomicAdd(&full_cnt[chk_buf_idx], atomicExch(&sample_cnt[chk_buf_idx], 0));
+            }
           }
         }
       }

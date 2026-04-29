@@ -55,7 +55,9 @@ __global__ void place_packet_data_kernel(
                                                packet_skip_bytes);
   }
 
-  if (threadIdx.x == 0 && meta->pkt_samples > max_samples_per_packet) {
+  if (total_pkts < gridDim.x && threadIdx.x == 0 && meta->pkt_samples > max_samples_per_packet) {
+    // Only warn for first batch of packets, because if the packets have this wrong once
+    // chances are it is always wrong.
     if (blockIdx.x == 0) {
       // Only output full warning once per kernel call, if that
       printf("WARNING: Packet has invalid pkt_samples = %u in header\n", meta->pkt_samples);
@@ -63,7 +65,9 @@ __global__ void place_packet_data_kernel(
     //  I for invalid, since if this happens it can happen a lot make it very terse
     printf("I");
   }
-  if (threadIdx.x == 0 && meta->num_subchannels != num_subchannels) {
+  if (total_pkts < gridDim.x && threadIdx.x == 0 && meta->num_subchannels != num_subchannels) {
+    // Only warn for first batch of packets, because if the packets have this wrong once
+    // chances are it is always wrong.
     if (blockIdx.x == 0) {
       // Only output full warning once per kernel call, if that
       printf("WARNING: Packet has invalid num_subchannels = %u != %u in header\n",

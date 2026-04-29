@@ -128,6 +128,11 @@ void NetConnectorAdvanced::setup(OperatorSpec& spec) {
                        "Warning interval for no output",
                        "Interval in seconds between warnings about no output being produced",
                        30);
+  spec.param<bool>(debug_print_,
+                   "debug_print",
+                   "Debug printing enabled",
+                   "Enable packet kernel debug printing",
+                   false);
 }
 
 void NetConnectorAdvanced::initialize() {
@@ -243,6 +248,7 @@ void NetConnectorAdvanced::initialize() {
                       spoof_header_d,
                       ttl_bytes_recv_,
                       packet_skip_bytes_.get(),
+                      debug_print_.get(),
                       streams_[n]);
     if (cudaStreamSynchronize(streams_[n]) != cudaSuccess) {
       HOLOSCAN_LOG_ERROR(cudaGetErrorString(cudaGetLastError()));
@@ -515,6 +521,7 @@ void NetConnectorAdvanced::compute(InputContext& op_input, OutputContext& op_out
                           spoof_header_d,
                           ttl_pkts_recv_,            // only needed if spoofing packets
                           packet_skip_bytes_.get(),  // only needed if spoofing packets
+                          debug_print_.get(),
                           streams_[cur_idx]);
         auto cuda_err_status = cudaGetLastError();
         if (cuda_err_status != cudaSuccess) {

@@ -80,3 +80,7 @@ class NetConnectorBasicParams:
     """Maximum packet size (not including network protocol headers) expected from sender"""
     batch_capacity: PositiveInt = 5
     """Input buffer capacity in number of network packet batches"""
+    no_output_warn_interval: int = 30
+    """Interval in seconds between warnings about no output being produced"""
+    debug_print: bool = False
+    """Whether packet kernel debug printing is enabled"""

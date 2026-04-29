@@ -62,6 +62,7 @@ class NetConnectorBasic : public Operator {
 
   // Miscellaneous
   Parameter<uint32_t> no_output_warn_interval_;
+  Parameter<bool> debug_print_;
 
   // Holds burst buffers that cannot be freed yet
   struct RxMsg {

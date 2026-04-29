@@ -29,7 +29,7 @@ __global__ void place_packet_data_kernel(
     unsigned long long int* buffer_counter, unsigned long long int* completed_pos,
     const uint32_t max_samples_per_packet, const double freq_idx_scaling,
     const double freq_idx_offset, const bool apply_conjugate, const RFPacketHeader* spoof_header,
-    const uint64_t total_pkts, const uint16_t packet_skip_bytes) {
+    const uint64_t total_pkts, const uint16_t packet_skip_bytes, const bool debug_print) {
   const auto buffer_size = out.Size(0);
   const auto num_samples = out.Size(1);
   const auto num_subchannels = out.Size(2);
@@ -55,27 +55,25 @@ __global__ void place_packet_data_kernel(
                                                packet_skip_bytes);
   }
 
-  if (total_pkts < gridDim.x && threadIdx.x == 0 && meta->pkt_samples > max_samples_per_packet) {
-    // Only warn for first batch of packets, because if the packets have this wrong once
-    // chances are it is always wrong.
+  if (debug_print && threadIdx.x == 0 && meta->pkt_samples > max_samples_per_packet) {
     if (blockIdx.x == 0) {
       // Only output full warning once per kernel call, if that
       printf("WARNING: Packet has invalid pkt_samples = %u in header\n", meta->pkt_samples);
+    } else {
+      //  I for invalid, since if this happens it can happen a lot make it very terse
+      printf("I");
     }
-    //  I for invalid, since if this happens it can happen a lot make it very terse
-    printf("I");
   }
-  if (total_pkts < gridDim.x && threadIdx.x == 0 && meta->num_subchannels != num_subchannels) {
-    // Only warn for first batch of packets, because if the packets have this wrong once
-    // chances are it is always wrong.
+  if (debug_print && threadIdx.x == 0 && meta->num_subchannels != num_subchannels) {
     if (blockIdx.x == 0) {
       // Only output full warning once per kernel call, if that
       printf("WARNING: Packet has invalid num_subchannels = %u != %u in header\n",
              meta->num_subchannels,
              static_cast<uint32_t>(num_subchannels));
+    } else {
+      //  I for invalid, since if this happens it can happen a lot make it very terse
+      printf("I");
     }
-    //  I for invalid, since if this happens it can happen a lot make it very terse
-    printf("I");
   }
 
   uint64_t global_sample_idx = meta->sample_idx;
@@ -95,7 +93,7 @@ __global__ void place_packet_data_kernel(
 
     // Check if samples are too old to be written to the buffer
     if (global_buffer_idx < buffer_counter[buffer_idx]) {
-      if (threadIdx.x == 0) {
+      if (debug_print && threadIdx.x == 0) {
         if (blockIdx.x == 0) {
           // Only output full warning once per kernel call, if that
           printf(
@@ -112,7 +110,7 @@ __global__ void place_packet_data_kernel(
       }
       // Check if packet's samples would write into a full buffer that has not been copied out yet
     } else if (full_cnt[buffer_idx] > 0 && buffer_counter[buffer_idx] > *completed_pos) {
-      if (threadIdx.x == 0) {
+      if (debug_print && threadIdx.x == 0) {
         if (blockIdx.x == 0) {
           // Only output full warning once per kernel call, if that
           printf(
@@ -219,7 +217,8 @@ void place_packet_data(matx::tensor_t<SampleT, 3>& out, RFMetadata* out_metadata
                        const uint32_t max_samples_per_packet, const double freq_idx_scaling,
                        const double freq_idx_offset, const bool apply_conjugate,
                        const RFPacketHeader* spoof_header, const uint64_t total_pkts,
-                       const uint16_t packet_skip_bytes, cudaStream_t stream) {
+                       const uint16_t packet_skip_bytes, const bool debug_print,
+                       cudaStream_t stream) {
   // Each block processes an individual packet
   place_packet_data_kernel<SampleT><<<num_pkts, 128, 0, stream>>>(out,
                                                                   out_metadata,
@@ -234,7 +233,8 @@ void place_packet_data(matx::tensor_t<SampleT, 3>& out, RFMetadata* out_metadata
                                                                   apply_conjugate,
                                                                   spoof_header,
                                                                   total_pkts,
-                                                                  packet_skip_bytes);
+                                                                  packet_skip_bytes,
+                                                                  debug_print);
 }
 
 template void place_packet_data<sample_t>(
@@ -243,4 +243,5 @@ template void place_packet_data<sample_t>(
     unsigned long long int* completed_pos, const uint32_t num_pkts,
     const uint32_t max_samples_per_packet, const double freq_idx_scaling,
     const double freq_idx_offset, const bool apply_conjugate, const RFPacketHeader* spoof_header,
-    const uint64_t total_pkts, const uint16_t packet_skip_bytes, cudaStream_t stream);
+    const uint64_t total_pkts, const uint16_t packet_skip_bytes, const bool debug_print,
+    cudaStream_t stream);

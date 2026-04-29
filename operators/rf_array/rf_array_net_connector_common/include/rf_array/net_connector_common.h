@@ -303,4 +303,5 @@ void place_packet_data(matx::tensor_t<SampleT, 3>& out, RFMetadata* out_metadata
                        const uint32_t max_samples_per_packet, const double freq_idx_scaling,
                        const double freq_idx_offset, const bool apply_conjugate,
                        const RFPacketHeader* spoof_header, const uint64_t total_pkts,
-                       const uint16_t packet_skip_bytes, cudaStream_t stream);
+                       const uint16_t packet_skip_bytes, const bool debug_print,
+                       cudaStream_t stream);

@@ -79,6 +79,10 @@ gpu_direct : bool, optional
     Whether GPUDirect is enabled for the advanced network operator.
 use_header_data_split : bool, optional
     Whether header-data split between CPU and GPU is enabled for the advanced network operator.
+no_output_warn_interval : int, optional
+    Interval in seconds between warnings about no output being produced
+debug_print : bool, optional
+    Whether packet kernel debug printing is enabled.
 )doc")
 }  // namespace NetConnectorAdvanced
 

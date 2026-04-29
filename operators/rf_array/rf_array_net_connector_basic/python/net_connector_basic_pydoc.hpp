@@ -71,6 +71,10 @@ max_packet_size : int, optional
     Maximum packet size (not including network protocol headers) expected from sender.
 batch_capacity: int, optional
     Input buffer capacity in number of network packet batches.
+no_output_warn_interval : int, optional
+    Interval in seconds between warnings about no output being produced
+debug_print : bool, optional
+    Whether packet kernel debug printing is enabled.
 )doc")
 }  // namespace NetConnectorBasic
 

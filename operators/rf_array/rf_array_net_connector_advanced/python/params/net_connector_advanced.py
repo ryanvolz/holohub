@@ -88,3 +88,7 @@ class NetConnectorAdvancedParams:
     """Whether GPUDirect is enabled for the advanced network operator"""
     use_header_data_split: bool = True
     """Whether header-data split between CPU and GPU is enabled for the advanced network operator"""
+    no_output_warn_interval: int = 30
+    """Interval in seconds between warnings about no output being produced"""
+    debug_print: bool = False
+    """Whether packet kernel debug printing is enabled"""

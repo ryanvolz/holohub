@@ -249,7 +249,8 @@ ENV HOLOHUB_CMAKE_ARGS="-DCMAKE_CUDA_ARCHITECTURES=${BUILD_CUDA_ARCHITECTURES} -
 
 RUN ./run build holoscan-rf-array --buildpath build \
     --configure-args "${HOLOHUB_CMAKE_ARGS}" \
-    --type rel-debug
+    --type rel-debug \
+    --parallel 4
 
 #################################################################
 # Runtime Image Stage

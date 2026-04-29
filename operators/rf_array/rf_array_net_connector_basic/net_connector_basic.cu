@@ -292,12 +292,12 @@ void NetConnectorBasic::check_completed_and_queue_arrays(OutputContext& op_outpu
 
   for (size_t i = 0; i < buffer_track.buffer_size; i++) {
     const size_t pos_wrap = (buffer_track.pos + i) % buffer_track.buffer_size;
-    HOLOSCAN_LOG_TRACE("Buffer {}: sample_cnt {} (full_cnt {}); completed_pos {}",
+    HOLOSCAN_LOG_TRACE("Buffer {}: sample_cnt {} (full_cnt {})",
                        buffer_track.counter_h[pos_wrap],
                        buffer_track.sample_cnt_h[pos_wrap],
-                       buffer_track.full_cnt_h[pos_wrap],
-                       *buffer_track.completed_pos_h);
+                       buffer_track.full_cnt_h[pos_wrap]);
   }
+  HOLOSCAN_LOG_TRACE("Buffer completed_pos {}", *buffer_track.completed_pos_h);
 
   auto buf_idx = buffer_track.find_ready_idx(buffer_track.find_start_idx());
   while (buf_idx != buffer_track.buffer_size) {

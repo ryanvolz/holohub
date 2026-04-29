@@ -245,6 +245,17 @@ struct BufferTracking {
       dropped_samples += skipped_buffer_samples;
     }
 
+    if (dropped_samples > 0) {
+      for (size_t i = 0; i < buffer_size; i++) {
+        const size_t pos_wrap = (pos + i) % buffer_size;
+        HOLOSCAN_LOG_INFO("Buffer {}: sample_cnt {} (full_cnt {})",
+                          counter_h[pos_wrap],
+                          sample_cnt_h[pos_wrap],
+                          full_cnt_h[pos_wrap]);
+      }
+      HOLOSCAN_LOG_INFO("Buffer completed_pos {}", *completed_pos_h);
+    }
+
     // Set the next buffer position expected
     pos = completed_pos + 1;
 

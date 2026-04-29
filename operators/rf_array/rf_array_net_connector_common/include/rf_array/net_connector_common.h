@@ -16,6 +16,7 @@
  */
 #pragma once
 
+#include <algorithm>
 #include <chrono>
 #include <limits>
 #include <map>
@@ -215,7 +216,8 @@ struct BufferTracking {
                                                    stream),
                                    "Failed to transfter buffer_counter to completed_pos");
 
-    auto dropped_samples = num_samples - full_cnt_h[buf_idx];
+    auto dropped_samples =
+        num_samples - std::min(static_cast<uint32_t>(full_cnt_h[buf_idx]), num_samples);
 
     if (total_output_samples == 0) {
       // We haven't output any samples yet, so set start_sample_idx

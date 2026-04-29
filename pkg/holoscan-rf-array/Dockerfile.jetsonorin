@@ -244,12 +244,12 @@ RUN meson build \
 ARG BUILD_CUDA_ARCHITECTURES=87
 WORKDIR /holohub
 COPY . .
+ENV CUDAFLAGS="-lineinfo"
 ENV HOLOHUB_CMAKE_ARGS="-DCMAKE_CUDA_ARCHITECTURES=${BUILD_CUDA_ARCHITECTURES} -DCMAKE_VERBOSE_MAKEFILE=ON -DANO_MGR='dpdk' -DHOLOHUB_DOWNLOAD_DATASETS=OFF"
 
 RUN ./run build holoscan-rf-array --buildpath build \
     --configure-args "${HOLOHUB_CMAKE_ARGS}" \
-    --type release \
-    --parallel 4
+    --type rel-debug
 
 #################################################################
 # Runtime Image Stage

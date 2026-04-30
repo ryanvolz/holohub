@@ -116,6 +116,11 @@ void NetConnectorBasic::setup(OperatorSpec& spec) {
                    "Debug printing enabled",
                    "Enable packet kernel debug printing",
                    false);
+  spec.param<int16_t>(packet_stream_priority_,
+                      "packet_stream_priority",
+                      "Packet stream priority",
+                      "Desired priority for the streams running the packet processing kernel",
+                      -1);
 }
 
 void NetConnectorBasic::initialize() {
@@ -166,6 +171,19 @@ void NetConnectorBasic::initialize() {
     cudaFreeHost(spoof_header_h);
   }
 
+  // Log requested packet stream priority and whether it is within the valid range
+  int least_priority = 0;
+  int greatest_priority = -1;
+
+  HOLOSCAN_CUDA_CALL_THROW_ERROR(
+      cudaDeviceGetStreamPriorityRange(&least_priority, &greatest_priority),
+      "Failed to get stream priority range");
+  HOLOSCAN_LOG_INFO(
+      "Requested packet stream priority is {}, valid range: {} (greatest) to {} (least).",
+      packet_stream_priority_.get(),
+      greatest_priority,
+      least_priority);
+
   // Set vector sizes based on batch_capacity parameter
   h_dev_ptrs_.resize(batch_capacity_.get());
   full_batch_data_h_.resize(batch_capacity_.get());
@@ -187,7 +205,8 @@ void NetConnectorBasic::initialize() {
                                                   p * max_packet_size_.get());
     }
 
-    cudaStreamCreateWithFlags(&streams_[n], cudaStreamNonBlocking);
+    cudaStreamCreateWithPriority(
+        &streams_[n], cudaStreamNonBlocking, packet_stream_priority_.get());
     cudaEventCreate(&events_[n]);
   }
 

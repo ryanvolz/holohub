@@ -83,6 +83,8 @@ no_output_warn_interval : int, optional
     Interval in seconds between warnings about no output being produced
 debug_print : bool, optional
     Whether packet kernel debug printing is enabled.
+packet_stream_priority : int, optional
+    Desired priority for the streams running the packet processing kernel.
 )doc")
 }  // namespace NetConnectorAdvanced
 

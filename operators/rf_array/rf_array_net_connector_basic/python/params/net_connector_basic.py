@@ -84,3 +84,5 @@ class NetConnectorBasicParams:
     """Interval in seconds between warnings about no output being produced"""
     debug_print: bool = False
     """Whether packet kernel debug printing is enabled"""
+    packet_stream_priority: int = -1
+    """Desired priority for the streams running the packet processing kernel"""

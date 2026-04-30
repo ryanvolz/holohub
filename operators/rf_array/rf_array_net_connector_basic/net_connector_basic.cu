@@ -321,13 +321,9 @@ void NetConnectorBasic::check_completed_and_queue_arrays(OutputContext& op_outpu
   auto buf_idx = buffer_track.find_ready_idx(buffer_track.find_start_idx());
   while (buf_idx != buffer_track.buffer_size) {
     // We have something to output!
-    // Get view of current data buffer
-    auto out_data_slice = rf_data.Slice<2>({static_cast<matx::index_t>(buf_idx), 0, 0},
-                                           {matx::matxDropDim, matx::matxEnd, matx::matxEnd});
-    // Copy buffer to output vector
-    auto out_data = matx::make_tensor<sample_t>(
-        out_data_slice.Shape(), matx::MATX_ASYNC_DEVICE_MEMORY, op_stream);
-    matx::copy(out_data, out_data_slice, op_stream);
+
+    // Get copy of data to output, update buffer tracking, and signal to kernel
+    auto out_data = buffer_track.completed_at_pos(buf_idx, rf_data, op_stream);
     auto out_ptr = std::make_shared<RFArray<sample_t>>(out_data, rf_metadata_h[buf_idx]);
     op_output.emit(out_ptr, "rf_out");
     last_emit = std::chrono::steady_clock::now();
@@ -336,15 +332,6 @@ void NetConnectorBasic::check_completed_and_queue_arrays(OutputContext& op_outpu
                        buffer_track.counter_h[buf_idx],
                        buffer_track.full_cnt_h[buf_idx],
                        buf_idx);
-
-    // Reset data buffer to 0 after data is copied out
-    auto real_shp = out_data_slice.Shape();
-    real_shp[1] = 2 * real_shp[1];
-    auto out_data_int_view = out_data_slice.View<real_t, 2, typeof(real_shp)>(std::move(real_shp));
-    (out_data_int_view = matx::zeros()).run(op_stream);
-
-    // Set buffer to next position after the one just completed and signal to kernel
-    buffer_track.completed_at_pos(buffer_track.counter_h[buf_idx], op_stream);
     HOLOSCAN_LOG_TRACE("Next sample cycle expected: {}", buffer_track.pos);
 
     // See if we have another buffer ready

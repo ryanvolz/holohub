@@ -129,8 +129,8 @@ struct BufferTracking {
     // Reserve end-of-array signal (initialized to 1 so kernel initiates reset on start)
     cudaMallocHost((void**)&full_cnt_h, buffer_size * sizeof(int));
     cudaMalloc((void**)&full_cnt_d, buffer_size * sizeof(int));
-    memset(full_cnt_h, 1, buffer_size * sizeof(int));
-    cudaMemset(full_cnt_d, 1, buffer_size * sizeof(int));
+    memset(full_cnt_h, 0, buffer_size * sizeof(int));
+    cudaMemset(full_cnt_d, 0, buffer_size * sizeof(int));
 
     // Reserve current buffer counter
     cudaMallocHost((void**)&counter_h, buffer_size * sizeof(unsigned long long int));
@@ -204,17 +204,25 @@ struct BufferTracking {
                                    "Failed to transfer completed_pos");
   }
 
-  void completed_at_pos(size_t completed_pos, cudaStream_t stream) {
-    size_t buf_idx = completed_pos % buffer_size;
+  auto completed_at_pos(size_t buf_idx, matx::tensor_t<sample_t, 3>& rf_data, cudaStream_t stream) {
+    // Get view of current data buffer
+    auto out_data_slice = rf_data.Slice<2>({static_cast<matx::index_t>(buf_idx), 0, 0},
+                                           {matx::matxDropDim, matx::matxEnd, matx::matxEnd});
+    // Copy buffer to output vector
+    auto out_data =
+        matx::make_tensor<sample_t>(out_data_slice.Shape(), matx::MATX_ASYNC_DEVICE_MEMORY, stream);
+    matx::copy(out_data, out_data_slice, stream);
 
-    // Signal to kernel that data copy is complete by copying this buffer's counter into
-    // the kernel's completed_pos following the copy command in the stream
-    HOLOSCAN_CUDA_CALL_THROW_ERROR(cudaMemcpyAsync(completed_pos_d,
-                                                   &counter_d[buf_idx],
-                                                   sizeof(unsigned long long int),
-                                                   cudaMemcpyDeviceToDevice,
-                                                   stream),
-                                   "Failed to transfter buffer_counter to completed_pos");
+    // Reset data buffer to 0 after data is copied out
+    auto real_shp = out_data_slice.Shape();
+    real_shp[1] = 2 * real_shp[1];
+    auto out_data_int_view = out_data_slice.View<real_t, 2, typeof(real_shp)>(std::move(real_shp));
+    (out_data_int_view = matx::zeros()).run(stream);
+
+    // Signal to kernel that data copy is complete by zeroing full_cnt[buf_idx]
+    // following the copy command in the stream
+    HOLOSCAN_CUDA_CALL_THROW_ERROR(cudaMemsetAsync(&full_cnt_d[buf_idx], 0, sizeof(int), stream),
+                                   "Failed to reset full_cnt to 0");
 
     auto dropped_samples =
         num_samples - std::min(static_cast<uint32_t>(full_cnt_h[buf_idx]), num_samples);
@@ -235,12 +243,12 @@ struct BufferTracking {
                         dropped_samples);
     }
 
-    if (completed_pos != pos) {
+    if (counter_h[buf_idx] != pos) {
       // We skipped some buffers entirely, increment dropped samples accordingly
-      auto skipped_buffer_samples = (completed_pos - pos) * num_samples;
+      auto skipped_buffer_samples = (counter_h[buf_idx] - pos) * num_samples;
       HOLOSCAN_LOG_WARN("Skipped empty sample buffers {} through {}, dropping {} samples",
                         pos,
-                        completed_pos - 1,
+                        counter_h[buf_idx] - 1,
                         skipped_buffer_samples);
       dropped_samples += skipped_buffer_samples;
     }
@@ -257,11 +265,13 @@ struct BufferTracking {
     }
 
     // Set the next buffer position expected
-    pos = completed_pos + 1;
+    pos = counter_h[buf_idx] + 1;
 
     // Update total and dropped sample count
     total_output_samples += full_cnt_h[buf_idx];
     total_dropped_samples += dropped_samples;
+
+    return out_data;
   }
 
   size_t find_start_idx() {

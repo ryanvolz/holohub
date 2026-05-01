@@ -274,47 +274,27 @@ struct BufferTracking {
     return out_data;
   }
 
-  size_t find_start_idx() {
-    if (pos != 0) {
-      return pos % buffer_size;
-    }
-    // Find the starting buffer index by finding the lowest non-zero counter index
-    size_t start_idx = 0;
+  size_t find_ready_idx() {
+    // Default return value is an invalid index (buffer_size) that indicates no buffers are ready
+    size_t ready_idx = buffer_size;
     unsigned long long int lowest_counter = ULLONG_MAX;
-    for (size_t i = 0; i < buffer_size; i++) {
-      if (counter_h[i] != 0 && counter_h[i] < lowest_counter) {
-        lowest_counter = counter_h[i];
-        start_idx = i;
+    // Loop through all of the buffers and find ones marked as ready to emit (full_cnt > 0)
+    // that we haven't already emitted (counter_h[buf_idx] >= pos).
+    // If there are multiple ready buffers, return the one with the lowest buffer counter
+    // so that data is emitted in order
+    for (size_t buf_idx = 0; buf_idx < buffer_size; buf_idx++) {
+      if (full_cnt_h[buf_idx] != 0 && counter_h[buf_idx] >= pos) {
+        if (counter_h[buf_idx] != 0 && counter_h[buf_idx] < lowest_counter) {
+          lowest_counter = counter_h[buf_idx];
+          ready_idx = buf_idx;
+        }
       }
     }
-    // Set position now that we have a start index
-    pos = counter_h[start_idx];
-    return start_idx;
-  }
-
-  size_t find_ready_idx(size_t start_idx) {
-    for (size_t i = 0; i < buffer_size; i++) {
-      const size_t buf_idx = (start_idx + i) % buffer_size;
-
-      // Move to next buffer in loop if this one is completely empty
-      if (full_cnt_h[buf_idx] == 0 && sample_cnt_h[buf_idx] == 0) {
-        continue;
-      }
-
-      // If this non-empty buffer is back in time from position, ignore and exit
-      if (counter_h[buf_idx] < pos) {
-        break;
-      }
-
-      // Output the next buffer if it has been marked as full
-      if (full_cnt_h[buf_idx] > 0) {
-        return buf_idx;
-      }
-      // Samples pending but nothing ready to output yet, break to return no ready index
-      break;
+    // Initialize pos if it is uninitialized and we have the first ready buffer
+    if (pos == 0 && ready_idx < buffer_size) {
+      pos = counter_h[ready_idx];
     }
-    // Return flag for no ready index (buffer_size)
-    return buffer_size;
+    return ready_idx;
   }
 };
 

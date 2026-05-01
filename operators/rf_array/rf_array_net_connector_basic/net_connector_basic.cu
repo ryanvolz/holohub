@@ -318,7 +318,7 @@ void NetConnectorBasic::check_completed_and_queue_arrays(OutputContext& op_outpu
   }
   HOLOSCAN_LOG_TRACE("Buffer completed_pos {}", *buffer_track.completed_pos_h);
 
-  auto buf_idx = buffer_track.find_ready_idx(buffer_track.find_start_idx());
+  auto buf_idx = buffer_track.find_ready_idx();
   while (buf_idx != buffer_track.buffer_size) {
     // We have something to output!
 
@@ -335,7 +335,7 @@ void NetConnectorBasic::check_completed_and_queue_arrays(OutputContext& op_outpu
     HOLOSCAN_LOG_TRACE("Next sample cycle expected: {}", buffer_track.pos);
 
     // See if we have another buffer ready
-    buf_idx = buffer_track.find_ready_idx(buffer_track.find_start_idx());
+    buf_idx = buffer_track.find_ready_idx();
   }
 }
 

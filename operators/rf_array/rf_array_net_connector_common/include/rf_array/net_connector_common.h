@@ -219,6 +219,12 @@ struct BufferTracking {
     auto out_data_int_view = out_data_slice.View<real_t, 2, typeof(real_shp)>(std::move(real_shp));
     (out_data_int_view = matx::zeros()).run(stream);
 
+    // Buffer's sample_cnt should have already been set to 0, but this is a stream-ordered
+    // failsafe in case packets are misnumbered or the tracking otherwise goes awry
+    // to ensure that it is definitely 0 before we start writing to the buffer again
+    HOLOSCAN_CUDA_CALL_THROW_ERROR(cudaMemsetAsync(&sample_cnt_d[buf_idx], 0, sizeof(int), stream),
+                                   "Failed to reset sample_cnt to 0");
+
     // Signal to kernel that data copy is complete by zeroing full_cnt[buf_idx]
     // following the copy command in the stream
     HOLOSCAN_CUDA_CALL_THROW_ERROR(cudaMemsetAsync(&full_cnt_d[buf_idx], 0, sizeof(int), stream),

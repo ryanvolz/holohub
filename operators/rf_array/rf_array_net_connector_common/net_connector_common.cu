@@ -94,8 +94,8 @@ __global__ void place_packet_data_kernel(
     // Check if samples are too old to be written to the buffer
     if (global_buffer_idx < buffer_counter[buffer_idx]) {
       if (debug_print && threadIdx.x == 0) {
-        if (blockIdx.x == 0) {
-          // Only output full warning once per kernel call, if that
+        if (sample_idx >= (num_samples - 3 * pkt_samples)) {
+          // Only output full warning 3 times per kernel call, if that
           printf(
               "WARNING: Packet with sample_idx = %llu implies an old buffer_idx: %llu (current: "
               "%llu). "
@@ -118,8 +118,8 @@ __global__ void place_packet_data_kernel(
     else if (full_cnt[buffer_idx] != 0) {
       // The main point of ending up here is to not copy the packets, but we can print if desired
       if (debug_print && threadIdx.x == 0) {
-        if (blockIdx.x == 0) {
-          // Only output full warning once per kernel call, if that
+        if (sample_idx >= (num_samples - 3 * pkt_samples)) {
+          // Only output full warning 3 times per kernel call, if that
           printf(
               "WARNING: Samples arrived for buffer %llu which would overwrite full buffer %llu "
               "(completed buffer position: %llu). Copying this data has been skipped.\n",
@@ -138,25 +138,19 @@ __global__ void place_packet_data_kernel(
     //  so check nonzero sample_cnt first before mismatching buffer_counter so no thread ends
     //  up here when another thread is actively writing the buffer)
     else if (sample_cnt[buffer_idx] > 0 && buffer_counter[buffer_idx] != global_buffer_idx) {
-      if (debug_print && threadIdx.x == 0) {
-        if (blockIdx.x == 0) {
-          // Only output full warning once per kernel call, if that
+      auto orig_full_cnt = atomicCAS(&full_cnt[buffer_idx], 0, sample_cnt[buffer_idx]);
+      if (orig_full_cnt == 0) {
+        if (debug_print) {
           printf(
               "WARNING: Samples arrived for buffer %llu which would overwrite partially written "
-              " buffer %llu  (completed buffer position: %llu). Copying this data has been "
-              "skipped.\n",
+              "buffer %llu containing %i samples already (completed buffer position: %llu). "
+              "Copying this data has been skipped.\n",
               global_buffer_idx,
               buffer_counter[buffer_idx],
+              full_cnt[buffer_idx],
               *completed_pos);
-        } else {
-          // f for full, but lowercase to differentiate from above
-          printf("f");
         }
-        // Mark the buffer as filled so it can be cleared and don't write any data
         *completed_pos = max(global_buffer_idx, *completed_pos);
-        // Signal to host that a buffer is "full" and how many valid samples it contains
-        full_cnt[buffer_idx] = sample_cnt[buffer_idx];
-        // Immediately reset the buffer sample count to 0 to avoid future race conditions
         sample_cnt[buffer_idx] = 0;
       }
     }
@@ -214,6 +208,7 @@ __global__ void place_packet_data_kernel(
           // setting the value atomically and working from the returned (prior) value
           const auto new_min_completed_pos = global_buffer_idx - mark_old_buffers;
           const auto prior_completed_pos = atomicMax(completed_pos, new_min_completed_pos);
+          // Start at next buffer not completed or at most one less that a full buffer cycle away
           const auto start_chk_pos =
               max(prior_completed_pos + 1, global_buffer_idx - buffer_size + 1);
           for (size_t chk_pos = start_chk_pos; chk_pos <= new_min_completed_pos; chk_pos++) {

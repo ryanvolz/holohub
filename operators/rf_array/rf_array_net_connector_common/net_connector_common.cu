@@ -131,9 +131,37 @@ __global__ void place_packet_data_kernel(
           printf("F");
         }
       }
-    } else {
-      // Samples can be written to the buffer
-
+    }
+    // Started writing some samples to buffer before a lot of unprocessed samples and now
+    // we're back around to the same buffer without having marked it as filled and cleared it
+    // (buffer_counter is set when writing *before the sample_cnt is incremented*,
+    //  so check nonzero sample_cnt first before mismatching buffer_counter so no thread ends
+    //  up here when another thread is actively writing the buffer)
+    else if (sample_cnt[buffer_idx] > 0 && buffer_counter[buffer_idx] != global_buffer_idx) {
+      if (debug_print && threadIdx.x == 0) {
+        if (blockIdx.x == 0) {
+          // Only output full warning once per kernel call, if that
+          printf(
+              "WARNING: Samples arrived for buffer %llu which would overwrite partially written "
+              " buffer %llu  (completed buffer position: %llu). Copying this data has been "
+              "skipped.\n",
+              global_buffer_idx,
+              buffer_counter[buffer_idx],
+              *completed_pos);
+        } else {
+          // f for full, but lowercase to differentiate from above
+          printf("f");
+        }
+        // Mark the buffer as filled so it can be cleared and don't write any data
+        *completed_pos = max(global_buffer_idx, *completed_pos);
+        // Signal to host that a buffer is "full" and how many valid samples it contains
+        full_cnt[buffer_idx] = sample_cnt[buffer_idx];
+        // Immediately reset the buffer sample count to 0 to avoid future race conditions
+        sample_cnt[buffer_idx] = 0;
+      }
+    }
+    // Samples can be written to the buffer
+    else {
       // Copy data
       for (uint32_t i = threadIdx.x; i < samples_to_write; i += blockDim.x) {
         for (uint32_t j = 0; j < num_subchannels; j++) {
@@ -181,19 +209,35 @@ __global__ void place_packet_data_kernel(
           // consider them full by moving any pending sample_cnt to full_cnt
           // Only two threads can get here: the one that filled a buffer, and the one that
           // wrote the first samples to a buffer.
-          for (size_t i = 1; i <= buffer_size - mark_old_buffers; i++) {
-            // Count forward starting from the potentially oldest buffer, the one *after* this one
-            const size_t chk_buf_idx = (buffer_idx + i) % buffer_size;
-            if (full_cnt[chk_buf_idx] > 0 && sample_cnt[chk_buf_idx] == 0) {
-              // reached a buffer that has already been marked full so move on
-              continue;
-            }
-            if (buffer_counter[chk_buf_idx] <= global_buffer_idx - mark_old_buffers) {
-              // Increment full_cnt by sample_cnt while resetting sample_cnt to 0
-              // (if other blocks subsequently increment sample_cnt, they will end up here to add
-              //  those additional samples to full_cnt)
-              atomicAdd(&full_cnt[chk_buf_idx], atomicExch(&sample_cnt[chk_buf_idx], 0));
-              *completed_pos = max(buffer_counter[chk_buf_idx], *completed_pos);
+          // First, secure unique rights to check starting from the current complete_pos
+          // through the new minimum completed_pos (global_buffer_idx - mark_old_buffers) by
+          // setting the value atomically and working from the returned (prior) value
+          const auto new_min_completed_pos = global_buffer_idx - mark_old_buffers;
+          const auto prior_completed_pos = atomicMax(completed_pos, new_min_completed_pos);
+          const auto start_chk_pos =
+              max(prior_completed_pos + 1, global_buffer_idx - buffer_size + 1);
+          for (size_t chk_pos = start_chk_pos; chk_pos <= new_min_completed_pos; chk_pos++) {
+            const size_t chk_buf_idx = chk_pos % buffer_size;
+            unsigned long long int old_buffer_counter, new_buffer_counter;
+            int current_sample_cnt;
+            do {
+              old_buffer_counter = buffer_counter[chk_buf_idx];
+              current_sample_cnt = sample_cnt[chk_buf_idx];
+              new_buffer_counter = buffer_counter[chk_buf_idx];
+            } while (new_buffer_counter != old_buffer_counter);
+            // buffer_counter didn't change before and after reading sample_cnt, so we
+            // can trust that the value that we have for the sample_cnt is associated with
+            // that buffer_counter regardless of what other threads might be doing
+            // (Once we have a non-zero sample_cnt, we know the buffer_counter won't be
+            //  changing because it is either frozen and soon to be marked full or
+            //  is being actively written to. If it is actively being written to, then
+            //  the buffer_counter will be close to the current global_buffer_idx and
+            //  so almost surely > new_min_completed_pos.)
+            if (new_buffer_counter <= new_min_completed_pos && current_sample_cnt > 0) {
+              // Signal to host that a buffer is "full" and how many valid samples it contains
+              full_cnt[chk_buf_idx] = current_sample_cnt;
+              // Immediately reset the buffer sample count to 0 to avoid future race conditions
+              sample_cnt[chk_buf_idx] = 0;
             }
           }
         }
@@ -201,12 +245,12 @@ __global__ void place_packet_data_kernel(
         if (sample_cnt[buffer_idx] >= num_samples) {
           // If samples are not duplicated, then only one thread across the whole kernel
           // can get here. So we don't have to do atomic operations.
+          // Set completed_pos so we can see the most recent buffer filled
+          *completed_pos = max(global_buffer_idx, *completed_pos);
           // Signal to host that a buffer is "full" and how many valid samples it contains
           full_cnt[buffer_idx] = sample_cnt[buffer_idx];
           // Immediately reset the buffer sample count to 0 to avoid future race conditions
           sample_cnt[buffer_idx] = 0;
-          // Set completed_pos so we can see the most recent buffer filled
-          *completed_pos = max(global_buffer_idx, *completed_pos);
         }
       }
     }

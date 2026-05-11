@@ -153,31 +153,33 @@ __global__ void place_packet_data_kernel(
       }
 
       if (threadIdx.x == 0) {
+        auto start_sample_cnt = a_sample_cnt.load(cuda::std::memory_order_relaxed);
+        // Fence syncs with the atomic check on buffer_counter to ensure that the value
+        // of start_sample_cnt is taken before anything passes the acquire fence below to
+        // increment the sample_cnt (so we can reset it in the while loop)
+        cuda::atomic_thread_fence(cuda::memory_order_release, cuda::thread_scope_device);
+
+        while (a_buffer_counter.load(cuda::std::memory_order_relaxed) != global_buffer_idx) {
+          // Have only one thread update the buffer_counter and subsequently reset the buffer
+          if (a_buffer_counter.exchange(global_buffer_idx, cuda::std::memory_order_relaxed) !=
+              global_buffer_idx) {
+            // Reset sample_cnt (should be 0 already, but maybe not if lots of dropped samples
+            // and the buffer was never cleared in which case we just write into it)
+            a_sample_cnt.fetch_sub(start_sample_cnt, cuda::std::memory_order_relaxed);
+
+            // Set the chunk metadata (OK if this happens with any memory order)
+            out_metadata[buffer_idx].sample_idx = global_buffer_idx * num_samples;
+            out_metadata[buffer_idx].sample_rate_numerator = meta->sample_rate_numerator;
+            out_metadata[buffer_idx].sample_rate_denominator = meta->sample_rate_denominator;
+            out_metadata[buffer_idx].center_freq =
+                freq_idx_scaling * meta->freq_idx + freq_idx_offset;
+          }
+        }
+        cuda::atomic_thread_fence(cuda::memory_order_acquire, cuda::thread_scope_device);
+
         // Count number of samples written to buffer across all packets / blocks
         auto orig_sample_cnt =
             a_sample_cnt.fetch_add(samples_to_write, cuda::std::memory_order_relaxed);
-
-        // Ensure the buffer counter and metadata match this global_buffer_idx
-        if (a_buffer_counter.exchange(global_buffer_idx, cuda::std::memory_order_acq_rel) !=
-            global_buffer_idx) {
-          // If orig_sample_cnt is non-zero, then something has gone wrong previously
-          // but for correct behavior now we need to reduce the count by orig_sample_cnt
-          // so we only count samples placed with the current global_buffer_idx.
-          // (This might reduce it more than necessary because we have no guarantee that the
-          //  orig_sample_cnt known by this thread is the same as when all threads started,
-          //  but that just means we will end up with an unfilled buffer by the counting
-          //  while in actuality it should still be filled with samples. For a case where a
-          //  bunch has already gone wrong to get to this point, that's acceptable.)
-          if (orig_sample_cnt > 0) {
-            a_sample_cnt.fetch_sub(orig_sample_cnt, cuda::std::memory_order_relaxed);
-          }
-          // Set the chunk metadata
-          out_metadata[buffer_idx].sample_idx = global_buffer_idx * num_samples;
-          out_metadata[buffer_idx].sample_rate_numerator = meta->sample_rate_numerator;
-          out_metadata[buffer_idx].sample_rate_denominator = meta->sample_rate_denominator;
-          out_metadata[buffer_idx].center_freq =
-              freq_idx_scaling * meta->freq_idx + freq_idx_offset;
-        }
 
         // Indicator for whether we should mark old buffers as full and how far back to do that
         size_t mark_old_buffers = 0;

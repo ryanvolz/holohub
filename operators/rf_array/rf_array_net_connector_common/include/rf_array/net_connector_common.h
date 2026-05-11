@@ -217,9 +217,9 @@ struct BufferTracking {
     for (size_t i = 1; i <= buffer_size; i++) {
       // Count forward starting from the potentially oldest buffer, the one *after* this one
       const size_t clr_buf_idx = (buf_idx + i) % buffer_size;
-      // We will only do this once for a given buffer because we will set update pos so that
+      // We will only do this once for a given buffer because we will update pos so that
       // counter_h[clr_buf_idx] = counter_h[buf_idx] + 1
-      if (counter_h[clr_buf_idx] >= pos &&
+      if (counter_h[clr_buf_idx] >= pos && counter_h[clr_buf_idx] <= counter_h[buf_idx] &&
           (full_cnt_h[clr_buf_idx] > 0 || sample_cnt_h[clr_buf_idx] > 0)) {
         // Reset data buffer to 0
         auto clr_data_slice = rf_data.Slice<2>({static_cast<matx::index_t>(clr_buf_idx), 0, 0},

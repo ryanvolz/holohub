@@ -16,7 +16,8 @@ env:
   IMAGE_DOCKERFILE: pkg/holoscan-rf-array/Dockerfile.jetsonorin
   IMAGE_NAME: ${{ github.repository }}/rf-array
   BUILD_CUDA_ARCHITECTURES: "87"
-  CUDA_VERSION: "12.2"
+  CUDA_BUILD_VERSION: "12.6"
+  CUDA_RUN_VERSION: "12.2"
   DOCA_VERSION: "2.9.3"
   HOLOSCAN_VERSION: "3.6.0"
   JETSON_LINUX_VERSION: "36.4"
@@ -64,6 +65,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           file: ${{ env.IMAGE_DOCKERFILE }}
+          target: run
           push: true
           cache-from: type=registry,ref=${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME}}-build-cache
           cache-to: type=registry,ref=${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME}}-build-cache,mode=max,compression=zstd
@@ -71,7 +73,8 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             BUILD_CUDA_ARCHITECTURES=${{ env.BUILD_CUDA_ARCHITECTURES }}
-            CUDA_VERSION=${{ env.CUDA_VERSION }}
+            CUDA_BUILD_VERSION=${{ env.CUDA_BUILD_VERSION }}
+            CUDA_RUN_VERSION=${{ env.CUDA_RUN_VERSION }}
             DOCA_VERSION=${{ env.DOCA_VERSION }}
             HOLOSCAN_VERSION=${{ env.HOLOSCAN_VERSION }}
             JETSON_LINUX_VERSION=${{ env.JETSON_LINUX_VERSION }}

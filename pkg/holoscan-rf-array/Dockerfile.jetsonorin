@@ -21,7 +21,8 @@
 ############################################################
 # Versions
 ############################################################
-ARG CUDA_VERSION=12.2
+ARG CUDA_BUILD_VERSION=12.6
+ARG CUDA_RUN_VERSION=12.2
 ARG DOCA_VERSION=2.9.3
 ARG HOLOSCAN_VERSION=3.6.0
 ARG JETSON_LINUX_VERSION=36.4
@@ -89,7 +90,7 @@ ENV NVIDIA_VISIBLE_DEVICES=all
 ############################################################
 # APT repository configs
 ############################################################
-FROM base AS apt-repo-config
+FROM base AS apt-repo-config-base
 
 # Configure nvidia Jetson apt repo
 ARG JETSON_LINUX_VERSION
@@ -97,19 +98,6 @@ ADD --chmod=664 https://repo.download.nvidia.com/jetson/jetson-ota-public.asc /e
 ADD --chmod=664 https://repo.download.nvidia.com/jetson/nvidia-repo-pin-600 /etc/apt/preferences.d/
 RUN L4T_APT_BRANCH="r${JETSON_LINUX_VERSION}" \
     && echo "deb https://repo.download.nvidia.com/jetson/common ${L4T_APT_BRANCH} main" >> /etc/apt/sources.list.d/nvidia-l4t-apt-source.list
-
-# CUDA for Jetson repo
-ARG CUDA_VERSION
-# (e.g. https://developer.nvidia.com/cuda-12-2-2-download-archive)
-RUN if [ "$(printf '%s\n' "12.2" "${CUDA_VERSION}" | sort -V | head -n1)" = "${CUDA_VERSION}" ]; then \
-        # less than or equal to 12.2
-        CUDA_REPO_URL="https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/arm64"; \
-    else \
-        CUDA_REPO_URL="https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/arm64"; \
-    fi \
-    && curl -fsSL -o cuda-keyring.deb "${CUDA_REPO_URL}/cuda-keyring_1.1-1_all.deb" \
-    && dpkg -i cuda-keyring.deb \
-    && rm cuda-keyring.deb
 
 # Setup DOCA APT repository
 # (version is what was used for the holoscan version that we are using)
@@ -130,6 +118,38 @@ RUN DOCA_ARCH=$(uname -m); \
     && DOCA_HOSTNAME=$(echo "${DOCA_REPO_ROOT}" | sed 's|https://\([^/]*\).*|\1|') \
     && echo "Package: *\nPin: origin \"${DOCA_HOSTNAME}\"\nPin-Priority: 800" \
         > /etc/apt/preferences.d/doca-pin
+
+FROM apt-repo-config-base AS apt-repo-config-build
+
+# CUDA for Jetson repo
+ARG CUDA_BUILD_VERSION
+ARG CUDA_VERSION=${CUDA_BUILD_VERSION}
+# (e.g. https://developer.nvidia.com/cuda-12-2-2-download-archive)
+RUN if [ "$(printf '%s\n' "12.2" "${CUDA_VERSION}" | sort -V | head -n1)" = "${CUDA_VERSION}" ]; then \
+        # less than or equal to 12.2
+        CUDA_REPO_URL="https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/arm64"; \
+    else \
+        CUDA_REPO_URL="https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/arm64"; \
+    fi \
+    && curl -fsSL -o cuda-keyring.deb "${CUDA_REPO_URL}/cuda-keyring_1.1-1_all.deb" \
+    && dpkg -i cuda-keyring.deb \
+    && rm cuda-keyring.deb
+
+FROM apt-repo-config-base AS apt-repo-config-run
+
+# CUDA for Jetson repo
+ARG CUDA_RUN_VERSION
+ARG CUDA_VERSION=${CUDA_RUN_VERSION}
+# (e.g. https://developer.nvidia.com/cuda-12-2-2-download-archive)
+RUN if [ "$(printf '%s\n' "12.2" "${CUDA_VERSION}" | sort -V | head -n1)" = "${CUDA_VERSION}" ]; then \
+        # less than or equal to 12.2
+        CUDA_REPO_URL="https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/arm64"; \
+    else \
+        CUDA_REPO_URL="https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/arm64"; \
+    fi \
+    && curl -fsSL -o cuda-keyring.deb "${CUDA_REPO_URL}/cuda-keyring_1.1-1_all.deb" \
+    && dpkg -i cuda-keyring.deb \
+    && rm cuda-keyring.deb
 
 ############################################################
 # Build tools
@@ -168,11 +188,11 @@ ARG CMAKE_BUILD_TYPE=Release
 FROM build-tools AS build
 
 # Setup apt repositories
-COPY --from=apt-repo-config /etc/apt/keyrings/ /etc/apt/keyrings/
-COPY --from=apt-repo-config /etc/apt/sources.list.d/ /etc/apt/sources.list.d/
-COPY --from=apt-repo-config /etc/apt/preferences.d/ /etc/apt/preferences.d/
-COPY --from=apt-repo-config /etc/apt/trusted.gpg.d/ /etc/apt/trusted.gpg.d/
-COPY --from=apt-repo-config /usr/share/keyrings/ /usr/share/keyrings/
+COPY --from=apt-repo-config-build /etc/apt/keyrings/ /etc/apt/keyrings/
+COPY --from=apt-repo-config-build /etc/apt/sources.list.d/ /etc/apt/sources.list.d/
+COPY --from=apt-repo-config-build /etc/apt/preferences.d/ /etc/apt/preferences.d/
+COPY --from=apt-repo-config-build /etc/apt/trusted.gpg.d/ /etc/apt/trusted.gpg.d/
+COPY --from=apt-repo-config-build /usr/share/keyrings/ /usr/share/keyrings/
 
 # Install dependencies
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
@@ -183,7 +203,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         pybind11-dev \
         python3-dev
 
-ARG CUDA_VERSION
+ARG CUDA_BUILD_VERSION
+ARG CUDA_VERSION=${CUDA_BUILD_VERSION}
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update \
@@ -261,11 +282,11 @@ FROM base AS run
 LABEL org.opencontainers.image.description="Holoscan RF array operators"
 
 # Setup apt repositories
-COPY --from=apt-repo-config /etc/apt/keyrings/ /etc/apt/keyrings/
-COPY --from=apt-repo-config /etc/apt/sources.list.d/ /etc/apt/sources.list.d/
-COPY --from=apt-repo-config /etc/apt/preferences.d/ /etc/apt/preferences.d/
-COPY --from=apt-repo-config /etc/apt/trusted.gpg.d/ /etc/apt/trusted.gpg.d/
-COPY --from=apt-repo-config /usr/share/keyrings/ /usr/share/keyrings/
+COPY --from=apt-repo-config-run /etc/apt/keyrings/ /etc/apt/keyrings/
+COPY --from=apt-repo-config-run /etc/apt/sources.list.d/ /etc/apt/sources.list.d/
+COPY --from=apt-repo-config-run /etc/apt/preferences.d/ /etc/apt/preferences.d/
+COPY --from=apt-repo-config-run /etc/apt/trusted.gpg.d/ /etc/apt/trusted.gpg.d/
+COPY --from=apt-repo-config-run /usr/share/keyrings/ /usr/share/keyrings/
 
 # Install any utils needed for execution
 ARG DEBIAN_FRONTEND=noninteractive
@@ -290,7 +311,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         zlib1g
 
 # Install cuda stuff
-ARG CUDA_VERSION
+ARG CUDA_RUN_VERSION
+ARG CUDA_VERSION=${CUDA_RUN_VERSION}
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update \

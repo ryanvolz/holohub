@@ -23,7 +23,7 @@
 ############################################################
 ARG CUDA_VERSION=12.2
 ARG DOCA_VERSION=2.8.0
-ARG HOLOSCAN_VERSION=3.6.0.2
+ARG HOLOSCAN_VERSION=3.2.0
 ARG JETSON_LINUX_VERSION=36.4
 
 ############################################################
@@ -163,16 +163,6 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 ARG CMAKE_BUILD_TYPE=Release
 
 #################################################################
-# Holoscan download and staging
-#################################################################
-
-FROM base as holoscan-staging
-# Install Holoscan from archive for compatibility with more CUDA versions
-ARG HOLOSCAN_VERSION
-ADD --unpack=true https://developer.download.nvidia.com/compute/holoscan/redist/holoscan/linux-aarch64/holoscan-linux-aarch64-${HOLOSCAN_VERSION}-archive.tar.xz /opt/nvidia/
-RUN mv /opt/nvidia/holoscan-* /opt/nvidia/holoscan
-
-#################################################################
 # Build Stage
 #################################################################
 FROM build-tools AS build
@@ -208,14 +198,22 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         libcurand-dev-${CUDA_VERSION_STRING} \
         libcusolver-dev-${CUDA_VERSION_STRING} \
         libcusparse-dev-${CUDA_VERSION_STRING} \
-        libnpp-dev-${CUDA_VERSION_STRING} \
         libnvjitlink-dev-${CUDA_VERSION_STRING}
+
+ARG HOLOSCAN_VERSION
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update \
+    && CUDA_VERSION_STRING=$(echo ${CUDA_VERSION} | cut -d. -f1-2 --output-delimiter="-") \
+    && apt-get install -y --no-install-recommends \
+        holoscan=${HOLOSCAN_VERSION}*
 
 # workaround for dpkg-shlibdeps needing to locate libcuda.so.1 and assign it to a package for dependency generation
 RUN ln -s /usr/local/cuda/targets/aarch64-linux/lib/stubs/libcuda.so /usr/lib/libcuda.so.1
 
-# Holoscan from staging layer
-COPY --from=holoscan-staging /opt/nvidia/holoscan/ /opt/nvidia/holoscan/
+# Workaround for holoscan package not having Python headers
+# Clone the source from git and copy the headers over
+ADD https://github.com/nvidia-holoscan/holoscan-sdk.git#v${HOLOSCAN_VERSION}:python/holoscan/core /opt/nvidia/holoscan/include/holoscan/python/core
 
 # Build other dependencies
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
@@ -315,11 +313,16 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     && static_libs=$(dpkg -L $packages | grep '\.a$' || true) \
     && cleanup_unwanted_libs $static_libs
 
-# Holoscan from staging layer
-COPY --from=holoscan-staging /opt/nvidia/holoscan/ /opt/nvidia/holoscan/
+ARG HOLOSCAN_VERSION
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update \
+    && CUDA_VERSION_STRING=$(echo ${CUDA_VERSION} | cut -d. -f1-2 --output-delimiter="-") \
+    && apt-get install -y --no-install-recommends \
+        holoscan=${HOLOSCAN_VERSION}*
 
 # Install Python dependencies not covered by deb packages
-RUN python3 -m pip install --no-cache-dir numpy==1.26 cupy-cuda12x scipy==1.15
+RUN python3 -m pip install --no-cache-dir holoscan==${HOLOSCAN_VERSION} numpy==1.26 cupy-cuda12x scipy==1.15
 
 #
 # Install DPDK libraries from build stage

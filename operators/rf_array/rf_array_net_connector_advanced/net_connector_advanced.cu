@@ -29,7 +29,24 @@ namespace holoscan::ops {
 
 void NetConnectorAdvanced::setup(OperatorSpec& spec) {
   // No output condition so operator will always run when input is available,
-  // regardless of whether downstream operators keep up
+  // regardless of whether downstream operators keep up.
+  // It is likely preferable to set a DownstreamMessageAffordableCondition condition with
+  // `min_size` equal to the `buffer_size` parameter (because this operator can potentially
+  // emit `buffer_size` times in one compute call) and modify the output buffer and next
+  // operator's input buffer to have a capacity of `buffer_size + N`. This way the operator
+  // will only run when there is space in the output buffer for the maximum number of emits
+  // and packet drops can hopefully be avoided by having extra space for N buffers.
+  // If the buffer still fills, then at least packets will be dropped on the input and we
+  // will know about them and flag it.
+  // e.g. in Python
+  // net_connector_rx.spec.outputs["rf_out"].condition(
+  //     holoscan.core.ConditionType.DOWNSTREAM_MESSAGE_AFFORDABLE,
+  //     min_size=packet_kwargs.get("buffer_size", 4),
+  // ).connector(
+  //     holoscan.core.IOSpec.ConnectorType.DOUBLE_BUFFER,
+  //     capacity=2 * packet_kwargs.get("buffer_size", 4),
+  //     policy=0,  # pop
+  // )
   spec.output<RFArray<sample_t>>("rf_out").condition(ConditionType::kNone);
 
   // Array settings

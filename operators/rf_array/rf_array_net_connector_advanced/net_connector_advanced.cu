@@ -30,7 +30,7 @@ namespace holoscan::ops {
 void NetConnectorAdvanced::setup(OperatorSpec& spec) {
   // No output condition so operator will always run when input is available,
   // regardless of whether downstream operators keep up
-  spec.output<std::shared_ptr<RFArray<sample_t>>>("rf_out").condition(ConditionType::kNone);
+  spec.output<RFArray<sample_t>>("rf_out").condition(ConditionType::kNone);
 
   // Array settings
   spec.param<uint16_t>(buffer_size_,
@@ -349,10 +349,10 @@ void NetConnectorAdvanced::free_bufs_and_queue_arrays(OutputContext& op_output,
 
     // Get copy of data to output, update buffer tracking, and signal to kernel
     auto out_data = buffer_track.completed_at_pos(buf_idx, rf_data, op_stream);
-    auto out_ptr = std::make_shared<RFArray<sample_t>>(out_data, rf_metadata_h[buf_idx]);
+    auto out = RFArray<sample_t>(out_data, rf_metadata_h[buf_idx]);
     // Need to manually set stream on output because it was not gotten by receive_cuda_stream
     op_output.set_cuda_stream(op_stream, "rf_out");
-    op_output.emit(out_ptr, "rf_out");
+    op_output.emit(out, "rf_out");
     last_emit = std::chrono::steady_clock::now();
 
     HOLOSCAN_LOG_DEBUG("Emitting sample buffer {} with {} samples from internal staging buffer {}",

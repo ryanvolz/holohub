@@ -28,8 +28,8 @@ namespace holoscan::ops {
 
 // ----- ResamplePoly ---------------------------------------------------
 void ResamplePoly::setup(OperatorSpec& spec) {
-  spec.input<std::shared_ptr<RFArray<complex_t>>>("rf_in");
-  spec.output<std::shared_ptr<RFArray<complex_t>>>("rf_out");
+  spec.input<RFArray<complex_t>>("rf_in");
+  spec.output<RFArray<complex_t>>("rf_out");
   spec.param<uint32_t>(
       chunk_size, "chunk_size", "Chunk size", "Number of samples to operate on in one chunk", {});
   spec.param<uint16_t>(num_subchannels,
@@ -97,12 +97,12 @@ void ResamplePoly::initialize() {
  */
 void ResamplePoly::compute(InputContext& op_input, OutputContext& op_output, ExecutionContext&) {
   HOLOSCAN_LOG_TRACE("ResamplePoly::compute() called");
-  auto in_ptr_maybe = op_input.receive<std::shared_ptr<RFArray<complex_t>>>("rf_in");
+  auto in_maybe = op_input.receive<RFArray<complex_t>>("rf_in");
   cudaStream_t stream = op_input.receive_cuda_stream("rf_in", true, false);
 
   int num_emitted = 0;
-  while (in_ptr_maybe) {
-    auto in_ptr = in_ptr_maybe.value();
+  while (in_maybe) {
+    auto in = in_maybe.value();
     if (prior_input) {
       // We need data from 3 separate chunks to compute one chunk of output and not shift the
       // metadata. So for incoming chunk N to output the resampling of chunk N-1, we need:
@@ -120,14 +120,14 @@ void ResamplePoly::compute(InputContext& op_input, OutputContext& op_output, Exe
       // copy prior input to middle of padded tensor
       auto padded_middle =
           padded_data_flipped.Slice({0, pad_size}, {matx::matxEnd, pad_size + chunk_size.get()});
-      auto prior_flipped = prior_input->data.Permute({1, 0});
+      auto prior_flipped = prior_input.value().data.Permute({1, 0});
       matx::copy(padded_middle, prior_flipped, stream);
 
       // copy first samples of incoming chunk to end of the padded tensor
       auto padded_end = padded_data_flipped.Slice({0, pad_size + chunk_size.get()},
                                                   {matx::matxEnd, 2 * pad_size + chunk_size.get()});
       auto incoming_flipped_beginning =
-          in_ptr->data.Permute({1, 0}).Slice({0, 0}, {matx::matxEnd, pad_size});
+          in.data.Permute({1, 0}).Slice({0, 0}, {matx::matxEnd, pad_size});
       matx::copy(padded_end, incoming_flipped_beginning, stream);
 
       // do the polyphase resampling
@@ -146,7 +146,7 @@ void ResamplePoly::compute(InputContext& op_input, OutputContext& op_output, Exe
       matx::copy(out_data, out_data_view, stream);
 
       // create output metadata and adjust its sample index and rate according to the resampling
-      auto out_metadata = prior_input->metadata;
+      auto out_metadata = prior_input.value().metadata;
       out_metadata.sample_idx *= up.get();
       out_metadata.sample_idx /= down.get();
       out_metadata.sample_rate_numerator *= up.get();
@@ -156,20 +156,20 @@ void ResamplePoly::compute(InputContext& op_input, OutputContext& op_output, Exe
       out_metadata.sample_rate_numerator /= divisor;
       out_metadata.sample_rate_denominator /= divisor;
 
-      auto out_ptr = std::make_shared<RFArray<complex_t>>(out_data, out_metadata);
-      op_output.emit(out_ptr, "rf_out");
+      auto out = RFArray<complex_t>(out_data, out_metadata);
+      op_output.emit(out, "rf_out");
       num_emitted++;
     }
 
     // set incoming input to prior input for next chunk
-    prior_input = in_ptr;
+    prior_input = in;
 
     if (num_emitted >= op_output.outputs()["rf_out"]->queue_size()) {
       break;
     }
 
     // see if we have another array on the receive buffer
-    in_ptr_maybe = op_input.receive<std::shared_ptr<RFArray<complex_t>>>("rf_in");
+    in_maybe = op_input.receive<RFArray<complex_t>>("rf_in");
   }
 }
 

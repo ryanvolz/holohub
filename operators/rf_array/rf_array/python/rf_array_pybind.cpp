@@ -113,12 +113,9 @@ PYBIND11_MODULE(_rf_array, m) {
   // Import the emitter/receiver registry from holoscan.core and pass it to this function to
   // register this new C++ type with the SDK.
   m.def("register_types", [](EmitterReceiverRegistry& registry) {
-    registry.add_emitter_receiver<std::shared_ptr<RFArray<complex_t>>>(
-        "std::shared_ptr<RFArray<complex_t>>"s);
-    registry.add_emitter_receiver<std::shared_ptr<RFArray<complex_int_type>>>(
-        "std::shared_ptr<RFArray<complex_int_type>>"s);
-    registry.add_emitter_receiver<std::shared_ptr<RFArray<sample_t>>>(
-        "std::shared_ptr<RFArray<sample_t>>"s);
+    registry.add_emitter_receiver<RFArray<complex_t>>("RFArray<complex_t>"s);
+    registry.add_emitter_receiver<RFArray<complex_int_type>>("RFArray<complex_int_type>"s);
+    registry.add_emitter_receiver<RFArray<sample_t>>("RFArray<sample_t>"s);
   });
 
 #ifdef RF_ARRAY_DIGITAL_RF

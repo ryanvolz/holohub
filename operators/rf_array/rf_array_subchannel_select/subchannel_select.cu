@@ -25,8 +25,8 @@ namespace holoscan::ops {
 // ----- SubchannelSelect ---------------------------------------------------
 template <typename sampleType>
 void SubchannelSelect<sampleType>::setup(OperatorSpec& spec) {
-  spec.input<std::shared_ptr<RFArray<sampleType>>>("rf_in");
-  spec.output<std::shared_ptr<RFArray<sampleType>>>("rf_out");
+  spec.input<RFArray<sampleType>>("rf_in");
+  spec.output<RFArray<sampleType>>("rf_out");
 
   spec.param<std::vector<int, std::allocator<int>>>(
       subchannel_idx,
@@ -58,25 +58,25 @@ template <typename sampleType>
 void SubchannelSelect<sampleType>::compute(InputContext& op_input, OutputContext& op_output,
                                            ExecutionContext&) {
   HOLOSCAN_LOG_TRACE("SubchannelSelect::compute() called");
-  auto in_ptr_maybe = op_input.receive<std::shared_ptr<RFArray<sampleType>>>("rf_in");
+  auto in_maybe = op_input.receive<RFArray<sampleType>>("rf_in");
   cudaStream_t stream = op_input.receive_cuda_stream("rf_in", true, false);
 
   int num_emitted = 0;
-  while (in_ptr_maybe) {
-    auto in_ptr = in_ptr_maybe.value();
+  while (in_maybe) {
+    auto in = in_maybe.value();
     auto out_tensor = matx::make_tensor<sampleType>(
-        {in_ptr->data.Size(0), idx_len}, matx::MATX_ASYNC_DEVICE_MEMORY, stream);
-    (out_tensor = matx::remap<1>(in_ptr->data, subchannel_idx_tensor)).run(stream);
+        {in.data.Size(0), idx_len}, matx::MATX_ASYNC_DEVICE_MEMORY, stream);
+    (out_tensor = matx::remap<1>(in.data, subchannel_idx_tensor)).run(stream);
 
-    auto out_ptr = std::make_shared<RFArray<sampleType>>(out_tensor, in_ptr->metadata);
-    op_output.emit(out_ptr, "rf_out");
+    auto out = RFArray<sampleType>(out_tensor, in.metadata);
+    op_output.emit(out, "rf_out");
     num_emitted++;
     if (num_emitted >= op_output.outputs()["rf_out"]->queue_size()) {
       break;
     }
 
     // see if we have another array on the receive buffer
-    in_ptr_maybe = op_input.receive<std::shared_ptr<RFArray<sampleType>>>("rf_in");
+    in_maybe = op_input.receive<RFArray<sampleType>>("rf_in");
   }
 }
 

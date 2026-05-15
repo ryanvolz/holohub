@@ -35,7 +35,7 @@ void NetConnectorBasic::setup(OperatorSpec& spec) {
   spec.input<std::shared_ptr<NetworkOpBurstParams>>("burst_in").condition(ConditionType::kNone);
   // No output condition so operator will always run when input is available,
   // regardless of whether downstream operators keep up
-  spec.output<std::shared_ptr<RFArray<sample_t>>>("rf_out").condition(ConditionType::kNone);
+  spec.output<RFArray<sample_t>>("rf_out").condition(ConditionType::kNone);
 
   // Array settings
   spec.param<uint16_t>(buffer_size_,
@@ -324,8 +324,8 @@ void NetConnectorBasic::check_completed_and_queue_arrays(OutputContext& op_outpu
 
     // Get copy of data to output, update buffer tracking, and signal to kernel
     auto out_data = buffer_track.completed_at_pos(buf_idx, rf_data, op_stream);
-    auto out_ptr = std::make_shared<RFArray<sample_t>>(out_data, rf_metadata_h[buf_idx]);
-    op_output.emit(out_ptr, "rf_out");
+    auto out = RFArray<sample_t>(out_data, rf_metadata_h[buf_idx]);
+    op_output.emit(out, "rf_out");
     last_emit = std::chrono::steady_clock::now();
 
     HOLOSCAN_LOG_DEBUG("Emitting sample buffer {} with {} samples from internal staging buffer {}",

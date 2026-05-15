@@ -25,8 +25,8 @@ namespace holoscan::ops {
 
 // ----- TypeConversionComplexFloatToInt ---------------------------------------------------
 void TypeConversionComplexFloatToInt::setup(OperatorSpec& spec) {
-  spec.input<std::shared_ptr<RFArray<complex_t>>>("rf_in");
-  spec.output<std::shared_ptr<RFArray<sample_t>>>("rf_out");
+  spec.input<RFArray<complex_t>>("rf_in");
+  spec.output<RFArray<sample_t>>("rf_out");
 }
 
 void TypeConversionComplexFloatToInt::initialize() {
@@ -42,23 +42,22 @@ void TypeConversionComplexFloatToInt::initialize() {
 void TypeConversionComplexFloatToInt::compute(InputContext& op_input, OutputContext& op_output,
                                               ExecutionContext&) {
   HOLOSCAN_LOG_TRACE("TypeConversionComplexFloatToInt::compute() called");
-  auto in_ptr_maybe = op_input.receive<std::shared_ptr<RFArray<complex_t>>>("rf_in");
+  auto in_maybe = op_input.receive<RFArray<complex_t>>("rf_in");
   cudaStream_t stream = op_input.receive_cuda_stream("rf_in", true, false);
 
   int num_emitted = 0;
-  while (in_ptr_maybe) {
-    auto in_ptr = in_ptr_maybe.value();
-    HOLOSCAN_LOG_TRACE("Dim: {}, {}", in_ptr->data.Size(0), in_ptr->data.Size(1));
+  while (in_maybe) {
+    auto in = in_maybe.value();
+    HOLOSCAN_LOG_TRACE("Dim: {}, {}", in.data.Size(0), in.data.Size(1));
 
     // convert the data from complex float to complex int
-    auto float_shp = in_ptr->data.Shape();
+    auto float_shp = in.data.Shape();
     float_shp[1] = 2 * float_shp[1];
-    auto in_data_float_view =
-        in_ptr->data.View<float_t, 2, typeof(float_shp)>(std::move(float_shp));
+    auto in_data_float_view = in.data.View<float_t, 2, typeof(float_shp)>(std::move(float_shp));
 
     auto complex_int_data =
-        matx::make_tensor<sample_t>(in_ptr->data.Shape(), matx::MATX_ASYNC_DEVICE_MEMORY, stream);
-    auto real_shp = in_ptr->data.Shape();
+        matx::make_tensor<sample_t>(in.data.Shape(), matx::MATX_ASYNC_DEVICE_MEMORY, stream);
+    auto real_shp = in.data.Shape();
     real_shp[1] = 2 * real_shp[1];
     auto out_data_int_view =
         complex_int_data.View<real_t, 2, typeof(real_shp)>(std::move(real_shp));
@@ -67,15 +66,15 @@ void TypeConversionComplexFloatToInt::compute(InputContext& op_input, OutputCont
          matx::as_int16(in_data_float_view * (std::numeric_limits<real_t>::max() - 1)))
         .run(stream);
 
-    auto out_ptr = std::make_shared<RFArray<sample_t>>(complex_int_data, in_ptr->metadata);
-    op_output.emit(out_ptr, "rf_out");
+    auto out = RFArray<sample_t>(complex_int_data, in.metadata);
+    op_output.emit(out, "rf_out");
     num_emitted++;
     if (num_emitted >= op_output.outputs()["rf_out"]->queue_size()) {
       break;
     }
 
     // see if we have another array on the receive buffer
-    in_ptr_maybe = op_input.receive<std::shared_ptr<RFArray<complex_t>>>("rf_in");
+    in_maybe = op_input.receive<RFArray<complex_t>>("rf_in");
   }
 }
 

@@ -49,7 +49,10 @@ template <typename sampleType>
 struct RFArray {
   matx::tensor_t<sampleType, 2> data;
   RFMetadata metadata;
+  std::shared_ptr<holoscan::Tensor> dlpack;
 
   RFArray(matx::tensor_t<sampleType, 2> _data, RFMetadata _metadata)
-      : data{_data}, metadata{_metadata} {}
+      : data{_data}, metadata{_metadata} {
+    dlpack = std::make_shared<holoscan::Tensor>(data.ToDlPack());
+  }
 };

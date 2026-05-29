@@ -16,6 +16,7 @@
  */
 
 #include <memory>
+#include <utility>
 #include <vector>
 
 #include <matx.h>
@@ -120,7 +121,7 @@ void ResamplePoly::compute(InputContext& op_input, OutputContext& op_output, Exe
       // copy prior input to middle of padded tensor
       auto padded_middle =
           padded_data_flipped.Slice({0, pad_size}, {matx::matxEnd, pad_size + chunk_size.get()});
-      auto prior_flipped = prior_input.value().data.Permute({1, 0});
+      auto prior_flipped = prior_input->data.Permute({1, 0});
       matx::copy(padded_middle, prior_flipped, stream);
 
       // copy first samples of incoming chunk to end of the padded tensor
@@ -146,7 +147,7 @@ void ResamplePoly::compute(InputContext& op_input, OutputContext& op_output, Exe
       matx::copy(out_data, out_data_view, stream);
 
       // create output metadata and adjust its sample index and rate according to the resampling
-      auto out_metadata = prior_input.value().metadata;
+      auto out_metadata = prior_input->metadata;
       out_metadata.sample_idx *= up.get();
       out_metadata.sample_idx /= down.get();
       out_metadata.sample_rate_numerator *= up.get();
@@ -162,7 +163,7 @@ void ResamplePoly::compute(InputContext& op_input, OutputContext& op_output, Exe
     }
 
     // set incoming input to prior input for next chunk
-    prior_input = in;
+    prior_input = std::move(in);
 
     if (num_emitted >= op_output.outputs()["rf_out"]->queue_size()) {
       break;

@@ -55,4 +55,23 @@ struct RFArray {
       : data{_data}, metadata{_metadata} {
     dlpack = std::make_shared<holoscan::Tensor>(data.ToDlPack());
   }
+
+  // Need custom assignment operators because matx::tensor_t's assignment operators are overridden
+  // and can't be used like normal by the default assignment operators
+  ~RFArray() = default;
+  RFArray(const RFArray& other) = default;
+  RFArray(RFArray&& other) = default;
+  RFArray& operator=(const RFArray& other) {
+    data.Shallow(other.data);
+    metadata = other.metadata;
+    dlpack = other.dlpack;
+    return *this;
+  }
+  RFArray& operator=(RFArray&& other) {
+    // shallow copy is the best we can do for matx::tensor_t data
+    data.Shallow(other.data);
+    metadata = std::move(other.metadata);
+    dlpack = std::move(other.dlpack);
+    return *this;
+  }
 };

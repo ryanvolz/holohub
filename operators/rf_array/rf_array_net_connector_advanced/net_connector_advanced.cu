@@ -330,7 +330,10 @@ std::vector<NetConnectorAdvanced::RxMsg> NetConnectorAdvanced::free_bufs() {
   // Loop over all batches, checking if any have completed
   while (out_q.size() > 0) {
     const auto first = out_q.front();
-    if (cudaEventQuery(first.evt) == cudaSuccess) {
+    // Wait on event rather than just query if queue size is at least batch capacity
+    if (cudaEventQuery(first.evt) == cudaSuccess ||
+        ((out_q.size() >= batch_capacity_.get()) &&
+         (cudaEventSynchronize(first.evt) == cudaSuccess))) {
       HOLOSCAN_LOG_DEBUG("Batch of packets successfully copied to GPU memory");
       completed.push_back(first);
       for (auto m = 0; m < first.num_batches; m++) { free_all_packets_and_burst_rx(first.msg[m]); }
@@ -347,21 +350,19 @@ void NetConnectorAdvanced::free_bufs_and_queue_arrays(OutputContext& op_output,
   // We have to wait for the packet placement to finish because we don't know if a buffer is
   // filled until we check the result of the copy
   std::vector<NetConnectorAdvanced::RxMsg> completed_msgs = free_bufs();
-  if (completed_msgs.empty()) {
-    return;
+  if (!completed_msgs.empty()) {
+    for (size_t i = 0; i < buffer_track.buffer_size; i++) {
+      const size_t pos_wrap = (buffer_track.pos + i) % buffer_track.buffer_size;
+      HOLOSCAN_LOG_TRACE("Buffer {}: sample_cnt {} (full_cnt {})",
+                         buffer_track.counter_h[pos_wrap],
+                         buffer_track.sample_cnt_h[pos_wrap],
+                         buffer_track.full_cnt_h[pos_wrap]);
+    }
+    HOLOSCAN_LOG_TRACE("Buffer completed_pos {}", *buffer_track.completed_pos_h);
   }
-
-  for (size_t i = 0; i < buffer_track.buffer_size; i++) {
-    const size_t pos_wrap = (buffer_track.pos + i) % buffer_track.buffer_size;
-    HOLOSCAN_LOG_TRACE("Buffer {}: sample_cnt {} (full_cnt {})",
-                       buffer_track.counter_h[pos_wrap],
-                       buffer_track.sample_cnt_h[pos_wrap],
-                       buffer_track.full_cnt_h[pos_wrap]);
-  }
-  HOLOSCAN_LOG_TRACE("Buffer completed_pos {}", *buffer_track.completed_pos_h);
 
   auto buf_idx = buffer_track.find_ready_idx();
-  while (buf_idx != buffer_track.buffer_size) {
+  if (buf_idx != buffer_track.buffer_size) {
     // We have something to output!
 
     // Get copy of data to output, update buffer tracking, and signal to kernel
@@ -377,9 +378,6 @@ void NetConnectorAdvanced::free_bufs_and_queue_arrays(OutputContext& op_output,
                        buffer_track.full_cnt_h[buf_idx],
                        buf_idx);
     HOLOSCAN_LOG_TRACE("Next sample cycle expected: {}", buffer_track.pos);
-
-    // See if we have another buffer ready
-    buf_idx = buffer_track.find_ready_idx();
   }
 }
 
@@ -412,9 +410,31 @@ void NetConnectorAdvanced::compute(InputContext& op_input, OutputContext& op_out
     last_emit = std::chrono::steady_clock::now();
   }
 
+  // First, check for completed arrays so we prioritize moving data downstream
+  free_bufs_and_queue_arrays(op_output, op_stream);
+
+  // Check to see if it has been a while since anything was output, and warn if it has
+  auto now = std::chrono::steady_clock::now();
+  auto duration_since_emit_seconds =
+      std::chrono::duration_cast<std::chrono::seconds>(now - last_emit.value()).count();
+  if (duration_since_emit_seconds > no_output_warn_interval_.get()) {
+    HOLOSCAN_LOG_WARN("{}:{} No arrays have been output in at least the last {} seconds!",
+                      interface_name_.get(),
+                      queue_id_.get(),
+                      no_output_warn_interval_.get());
+    // Even though we haven't output anything, set the last emit time to now so we can
+    // output the warning again if there is still no output
+    last_emit = now;
+  }
+
+  // We only want to do the one check for a burst of packets and one check for completed
+  // buffer arrays so that we can exit the operator quickly and emit anything we have.
+  // The operator will be resheduled again shortly to deal with more bursts or completed
+  // buffer arrays.
+
   BurstParams* burst;
   auto burst_status = get_rx_burst(&burst, port_id_, queue_id_.get());
-  while (burst_status == Status::SUCCESS) {
+  if (burst_status == Status::SUCCESS) {
     auto burst_size = get_num_packets(burst);
 
     HOLOSCAN_LOG_DEBUG("Handling burst of {} packets with {} packets already in buffer",
@@ -427,7 +447,9 @@ void NetConnectorAdvanced::compute(InputContext& op_input, OutputContext& op_out
       // Can't proceed until batch that we're aggregating packets into has been cleared from prior
       // processing, so wait for the corresponding event to complete
       if (cudaEventQuery(events_[cur_idx]) != cudaSuccess) {
-        HOLOSCAN_LOG_DEBUG("Waiting on event to clear batch with index {}", cur_idx);
+        HOLOSCAN_LOG_WARN(
+            "Fell behind in processing on GPU! Waiting on event to clear batch with index {}",
+            cur_idx);
         HOLOSCAN_CUDA_CALL_THROW_ERROR(cudaEventSynchronize(events_[cur_idx]),
                                        "Failed to synchronize on cleared batch");
       }
@@ -513,20 +535,10 @@ void NetConnectorAdvanced::compute(InputContext& op_input, OutputContext& op_out
             "{} packets collected exceeding batch size of {}, packing into array on GPU",
             aggr_pkts_recv_,
             batch_size_.get());
-        do {
+        // Make room in the queue if it exceeds batch capacity
+        while (out_q.size() >= batch_capacity_.get()) {
           free_bufs_and_queue_arrays(op_output, op_stream);
-          if (out_q.size() >= batch_capacity_.get()) {
-            HOLOSCAN_LOG_ERROR("Fell behind in processing on GPU!");
-            const auto first_msg = out_q.front();
-            if (cudaStreamSynchronize(first_msg.stream) != cudaSuccess) {
-              HOLOSCAN_LOG_ERROR(
-                  "Failed to synchronize to next stream for placing packet data. Ending with "
-                  "error:");
-              HOLOSCAN_LOG_ERROR(cudaGetErrorString(cudaGetLastError()));
-              exit(1);
-            }
-          }
-        } while (out_q.size() >= batch_capacity_.get());
+        }
 
         // Copy packet I/Q contents to appropriate location in 'rf_data'
         place_packet_data(rf_data,
@@ -578,26 +590,6 @@ void NetConnectorAdvanced::compute(InputContext& op_input, OutputContext& op_out
         cur_idx = (++cur_idx % batch_capacity_.get());
       }
     }
-
-    // see if we have another burst on the receive buffer
-    burst_status = get_rx_burst(&burst, port_id_, queue_id_.get());
-  }
-
-  // One final check for completed arrays before exiting
-  free_bufs_and_queue_arrays(op_output, op_stream);
-
-  // Check to see if it has been a while since anything was output, and warn if it has
-  auto now = std::chrono::steady_clock::now();
-  auto duration_since_emit_seconds =
-      std::chrono::duration_cast<std::chrono::seconds>(now - last_emit.value()).count();
-  if (duration_since_emit_seconds > no_output_warn_interval_.get()) {
-    HOLOSCAN_LOG_WARN("{}:{} No arrays have been output in at least the last {} seconds!",
-                      interface_name_.get(),
-                      queue_id_.get(),
-                      no_output_warn_interval_.get());
-    // Even though we haven't output anything, set the last emit time to now so we can
-    // output the warning again if there is still no output
-    last_emit = now;
   }
 }
 

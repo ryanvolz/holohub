@@ -205,45 +205,11 @@ struct BufferTracking {
   }
 
   auto completed_at_pos(size_t buf_idx, matx::tensor_t<sample_t, 3>& rf_data, cudaStream_t stream) {
-    // Get view of current data buffer
-    auto out_data_slice = rf_data.Slice<2>({static_cast<matx::index_t>(buf_idx), 0, 0},
-                                           {matx::matxDropDim, matx::matxEnd, matx::matxEnd});
-    // Copy buffer to output vector
-    auto out_data =
-        matx::make_tensor<sample_t>(out_data_slice.Shape(), matx::MATX_ASYNC_DEVICE_MEMORY, stream);
-    matx::copy(out_data, out_data_slice, stream);
-
-    // We may have skipped some buffers entirely, make sure intervening buffers are cleared as well
-    for (size_t i = 1; i <= buffer_size; i++) {
-      // Count forward starting from the potentially oldest buffer, the one *after* this one
-      const size_t clr_buf_idx = (buf_idx + i) % buffer_size;
-      // We will only do this once for a given buffer because we will update pos so that
-      // counter_h[clr_buf_idx] = counter_h[buf_idx] + 1
-      if (counter_h[clr_buf_idx] >= pos && counter_h[clr_buf_idx] <= counter_h[buf_idx] &&
-          (full_cnt_h[clr_buf_idx] > 0 || sample_cnt_h[clr_buf_idx] > 0)) {
-        // Reset data buffer to 0
-        auto clr_data_slice = rf_data.Slice<2>({static_cast<matx::index_t>(clr_buf_idx), 0, 0},
-                                               {matx::matxDropDim, matx::matxEnd, matx::matxEnd});
-        auto real_shp = clr_data_slice.Shape();
-        real_shp[1] = 2 * real_shp[1];
-        auto clr_data_int_view =
-            clr_data_slice.View<real_t, 2, typeof(real_shp)>(std::move(real_shp));
-        (clr_data_int_view = matx::zeros()).run(stream);
-
-        // Buffer's sample_cnt should have already been set to 0, but this is a stream-ordered
-        // failsafe in case packets are misnumbered or the tracking otherwise goes awry
-        // to ensure that it is definitely 0 before we start writing to the buffer again
-        HOLOSCAN_CUDA_CALL_THROW_ERROR(
-            cudaMemsetAsync(&sample_cnt_d[clr_buf_idx], 0, sizeof(int), stream),
-            "Failed to reset sample_cnt to 0");
-
-        // Signal to kernel that data copy is complete by zeroing full_cnt[buf_idx]
-        // following the copy command in the stream
-        HOLOSCAN_CUDA_CALL_THROW_ERROR(
-            cudaMemsetAsync(&full_cnt_d[clr_buf_idx], 0, sizeof(int), stream),
-            "Failed to reset full_cnt to 0");
-      }
-    }
+    // Do accounting first, before issuing async buffer copy or tracking reset because there
+    // might be other streams out there copying the tracking info from device to host memory
+    // and we don't want to modify these host values before we use them by resetting the device
+    // tracking values.
+    unsigned long long this_pos = pos;
 
     auto dropped_samples =
         num_samples - std::min(static_cast<uint32_t>(full_cnt_h[buf_idx]), num_samples);
@@ -291,6 +257,49 @@ struct BufferTracking {
     // Update total and dropped sample count
     total_output_samples += full_cnt_h[buf_idx];
     total_dropped_samples += dropped_samples;
+
+    // Now the async stream commands
+
+    // Get view of current data buffer
+    auto out_data_slice = rf_data.Slice<2>({static_cast<matx::index_t>(buf_idx), 0, 0},
+                                           {matx::matxDropDim, matx::matxEnd, matx::matxEnd});
+    // Copy buffer to output vector
+    auto out_data =
+        matx::make_tensor<sample_t>(out_data_slice.Shape(), matx::MATX_ASYNC_DEVICE_MEMORY, stream);
+    matx::copy(out_data, out_data_slice, stream);
+
+    // We may have skipped some buffers entirely, make sure intervening buffers are cleared as well
+    for (size_t i = 1; i <= buffer_size; i++) {
+      // Count forward starting from the potentially oldest buffer, the one *after* this one
+      const size_t clr_buf_idx = (buf_idx + i) % buffer_size;
+      // We will only do this once for a given buffer because we are only allowing buffers with
+      // counter_h[clr_buf_idx] between this_pos and counter_h[buf_idx] (inclusive) and pos
+      // for next time has already been updated to be (counter_h[buf_idx] + 1)
+      if (counter_h[clr_buf_idx] >= this_pos && counter_h[clr_buf_idx] <= counter_h[buf_idx] &&
+          (full_cnt_h[clr_buf_idx] > 0 || sample_cnt_h[clr_buf_idx] > 0)) {
+        // Reset data buffer to 0
+        auto clr_data_slice = rf_data.Slice<2>({static_cast<matx::index_t>(clr_buf_idx), 0, 0},
+                                               {matx::matxDropDim, matx::matxEnd, matx::matxEnd});
+        auto real_shp = clr_data_slice.Shape();
+        real_shp[1] = 2 * real_shp[1];
+        auto clr_data_int_view =
+            clr_data_slice.View<real_t, 2, typeof(real_shp)>(std::move(real_shp));
+        (clr_data_int_view = matx::zeros()).run(stream);
+
+        // Buffer's sample_cnt should have already been set to 0, but this is a stream-ordered
+        // failsafe in case packets are misnumbered or the tracking otherwise goes awry
+        // to ensure that it is definitely 0 before we start writing to the buffer again
+        HOLOSCAN_CUDA_CALL_THROW_ERROR(
+            cudaMemsetAsync(&sample_cnt_d[clr_buf_idx], 0, sizeof(int), stream),
+            "Failed to reset sample_cnt to 0");
+
+        // Signal to kernel that data copy is complete by zeroing full_cnt[buf_idx]
+        // following the copy command in the stream
+        HOLOSCAN_CUDA_CALL_THROW_ERROR(
+            cudaMemsetAsync(&full_cnt_d[clr_buf_idx], 0, sizeof(int), stream),
+            "Failed to reset full_cnt to 0");
+      }
+    }
 
     return out_data;
   }

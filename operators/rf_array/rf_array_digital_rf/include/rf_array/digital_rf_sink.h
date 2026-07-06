@@ -17,6 +17,7 @@
 #pragma once
 
 #include <filesystem>
+#include <optional>
 
 #include <digital_rf.h>
 #include <hdf5.h>
@@ -65,6 +66,7 @@ class DigitalRFSink : public Operator {
   uint64_t sample_rate_denominator;
   std::filesystem::path channel_dir_path;
   Digital_rf_write_object* drf_writer = nullptr;
+  std::optional<matx::tensor_t<sampleType, 2>> host_data;
 };  // DigitalRFSink
 
 }  // namespace holoscan::ops

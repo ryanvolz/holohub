@@ -111,37 +111,35 @@ void DigitalRFSink<sampleType>::compute(InputContext& op_input, OutputContext& o
                                         ExecutionContext&) {
   HOLOSCAN_LOG_TRACE("DigitalRFSink::compute() called");
   auto in_maybe = op_input.receive<RFArray<sampleType>>("rf_in");
+  if (!in_maybe) {
+    return;
+  }
   cudaStream_t stream = op_input.receive_cuda_stream("rf_in", true, false);
 
-  std::queue<RFArray<sampleType>> host_arrays;
-  std::queue<cudaEvent_t> data_ready_events;
+  auto in = in_maybe.value();
+  HOLOSCAN_LOG_DEBUG(
+      "Copying {} samples @ {} from GPU memory", in.data.Size(0), in.metadata.sample_idx);
 
-  while (in_maybe) {
-    auto in = in_maybe.value();
-    HOLOSCAN_LOG_DEBUG(
-        "Copying {} samples @ {} from GPU memory", in.data.Size(0), in.metadata.sample_idx);
-
-    // copy incoming data/metadata to host-allocated memory
-    auto host_data = matx::make_tensor<sampleType>(in.data.Shape(), matx::MATX_HOST_MEMORY);
-    matx::copy(host_data, in.data, stream);
-    auto host_arr = RFArray<sampleType>(host_data, in.metadata);
-    host_arrays.push(host_arr);
-
-    cudaEvent_t event;
-    cudaEventCreate(&event, cudaEventDisableTiming);
-    cudaEventRecord(event, stream);
-    data_ready_events.push(event);
-
-    // see if we have another array on the receive buffer
-    in_maybe = op_input.receive<RFArray<sampleType>>("rf_in");
+  if (!host_data) {
+    host_data = matx::make_tensor<sampleType>(in.data.Shape(), matx::MATX_HOST_MEMORY);
+  } else if (in.data.Shape() != host_data->Shape()) {
+    // making into existing tensor does a shallow copy from a new temporary tensor
+    // which will release the old memory
+    matx::make_tensor(*host_data, in.data.Shape(), matx::MATX_HOST_MEMORY);
   }
 
+  // copy incoming data/metadata to host-allocated memory
+  matx::copy(*host_data, in.data, stream);
+
+  cudaEvent_t event;
+  cudaEventCreate(&event, cudaEventDisableTiming);
+  cudaEventRecord(event, stream);
+
   // initialize writer using data specifications from the first array
-  if (!drf_writer && !host_arrays.empty()) {
-    auto metadata = host_arrays.front().metadata;
-    start_idx = metadata.sample_idx;
-    sample_rate_numerator = metadata.sample_rate_numerator;
-    sample_rate_denominator = metadata.sample_rate_denominator;
+  if (!drf_writer) {
+    start_idx = in.metadata.sample_idx;
+    sample_rate_numerator = in.metadata.sample_rate_numerator;
+    sample_rate_denominator = in.metadata.sample_rate_denominator;
     HOLOSCAN_LOG_INFO("Initializing Digital RF writer with start_idx {}, sample_rate {}/{}",
                       start_idx,
                       sample_rate_numerator,
@@ -169,23 +167,18 @@ void DigitalRFSink<sampleType>::compute(InputContext& op_input, OutputContext& o
     }
   }
 
-  // wait for each copy to host memory to complete, then write
-  while (data_ready_events.size() > 0) {
-    cudaEventSynchronize(data_ready_events.front());
-    data_ready_events.pop();
-    const auto in = host_arrays.front();
+  // wait for copy to host memory to complete, then write
+  cudaEventSynchronize(event);
 
-    HOLOSCAN_LOG_DEBUG("Writing {} samples @ {}", in.data.Size(0), in.metadata.sample_idx);
-    auto result = digital_rf_write_hdf5(
-        drf_writer, in.metadata.sample_idx - start_idx, in.data.Data(), in.data.Size(0));
-    if (result) {
-      HOLOSCAN_LOG_ERROR("Digital RF write failed with error {}, sample_idx {}  write_len {}",
-                         result,
-                         in.metadata.sample_idx - start_idx,
-                         in.data.Size(0));
-      exit(result);
-    }
-    host_arrays.pop();
+  HOLOSCAN_LOG_DEBUG("Writing {} samples @ {}", host_data->Size(0), in.metadata.sample_idx);
+  auto result = digital_rf_write_hdf5(
+      drf_writer, in.metadata.sample_idx - start_idx, host_data->Data(), host_data->Size(0));
+  if (result) {
+    HOLOSCAN_LOG_ERROR("Digital RF write failed with error {}, sample_idx {}  write_len {}",
+                       result,
+                       in.metadata.sample_idx - start_idx,
+                       host_data->Size(0));
+    exit(result);
   }
 }
 

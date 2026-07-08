@@ -68,19 +68,19 @@ PYBIND11_MODULE(_rf_array, m) {
   m.attr("__version__") = "dev";
 #endif
 
-  py::class_<RFMetadata>(m, "RFMetadata", doc::RFArrayTypes::doc_RFMetadata_python)
+  py::class_<RFMetadata>(m, "RFMetadata", doc::RFMetadata::doc_RFMetadata)
       .def(py::init<uint64_t, uint64_t, uint64_t, double>(),
            "sample_idx"_a,
            "sample_rate_numerator"_a,
            "sample_rate_denominator"_a,
            "center_freq"_a,
-           doc::RFArrayTypes::doc_RFMetadata_python)
+           doc::RFMetadata::doc_RFMetadata)
       .def_readwrite("sample_idx", &RFMetadata::sample_idx)
       .def_readwrite("sample_rate_numerator", &RFMetadata::sample_rate_numerator)
       .def_readwrite("sample_rate_denominator", &RFMetadata::sample_rate_denominator)
       .def_readwrite("center_freq", &RFMetadata::center_freq);
 
-  py::class_<RFArray<complex_int_type>>(m, "RFArray_sc16", doc::RFArrayTypes::doc_RFArray_python)
+  py::class_<RFArray<complex_int_type>>(m, "RFArray_sc16", doc::RFArray::doc_RFArray)
       .def(py::init([](holoscan::Tensor data, RFMetadata metadata) {
              matx::tensor_t<complex_int_type, 2> data_matx;
              matx::make_tensor(data_matx, *data.to_dlpack());
@@ -88,11 +88,19 @@ PYBIND11_MODULE(_rf_array, m) {
            }),
            "data"_a,
            "metadata"_a,
-           doc::RFArrayTypes::doc_RFArray_python)
+           doc::RFArray::doc_RFArray)
       .def_readonly("data", &RFArray<complex_int_type>::dlpack)
-      .def_readonly("metadata", &RFArray<complex_int_type>::metadata);
+      .def_readonly("metadata", &RFArray<complex_int_type>::metadata)
+      .def(
+          "set_deallocation_stream",
+          [](RFArray<complex_int_type>& self, intptr_t stream_ptr) {
+            auto cuda_stream = reinterpret_cast<cudaStream_t>(stream_ptr);
+            return self.set_deallocation_stream(cuda_stream);
+          },
+          "stream"_a,
+          doc::RFArray::doc_set_deallocation_stream);
 
-  py::class_<RFArray<complex_t>>(m, "RFArray_fc32", doc::RFArrayTypes::doc_RFArray_python)
+  py::class_<RFArray<complex_t>>(m, "RFArray_fc32", doc::RFArray::doc_RFArray)
       .def(py::init([](holoscan::Tensor data, RFMetadata metadata) {
              matx::tensor_t<complex_t, 2> data_matx;
              matx::make_tensor(data_matx, *data.to_dlpack());
@@ -100,9 +108,17 @@ PYBIND11_MODULE(_rf_array, m) {
            }),
            "data"_a,
            "metadata"_a,
-           doc::RFArrayTypes::doc_RFArray_python)
+           doc::RFArray::doc_RFArray)
       .def_readonly("data", &RFArray<complex_t>::dlpack)
-      .def_readonly("metadata", &RFArray<complex_t>::metadata);
+      .def_readonly("metadata", &RFArray<complex_t>::metadata)
+      .def(
+          "set_deallocation_stream",
+          [](RFArray<complex_t>& self, intptr_t stream_ptr) {
+            auto cuda_stream = reinterpret_cast<cudaStream_t>(stream_ptr);
+            return self.set_deallocation_stream(cuda_stream);
+          },
+          "stream"_a,
+          doc::RFArray::doc_set_deallocation_stream);
 
   // Import the emitter/receiver registry from holoscan.core and pass it to this function to
   // register this new C++ type with the SDK.

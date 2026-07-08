@@ -22,9 +22,9 @@
 
 namespace holoscan::doc {
 
-namespace RFArrayTypes {
+namespace RFMetadata {
 
-PYDOC(RFMetadata_python, R"doc(
+PYDOC(RFMetadata, R"doc(
 Dataclass for storing metadata corresponding to a chunk of RF samples.
 
 Attributes
@@ -39,16 +39,41 @@ center_freq : int
     Center frequency of the RF data samples.
 )doc")
 
-PYDOC(RFArray_python, R"doc(
+}  // namespace RFMetadata
+
+namespace RFArray {
+
+PYDOC(RFArray, R"doc(
 Dataclass containing a data array and metadata class for a chunk of RF samples.
 
 Attributes
 ----------
-data : matx::tensor_t<sampleType, 2>, shape (num_samples, num_subchannels)
+data : holoscan.tensor, shape (num_samples, num_subchannels)
     Array of RF samples.
 metadata : RFMetadata
     Metadata corresponding to the RF data.
 )doc")
-}  // namespace RFArrayTypes
+
+PYDOC(set_deallocation_stream, R"doc(
+Set the CUDA stream for stream-aware memory deallocation.
+
+For operators that use an RFArray's data tensor on a stream separate from
+the one it was created on (i.e. it was passed from another operator), this
+method should be called with the newly used stream in order to defer memory
+reuse util GPU operations on the stream complete. This prevents race
+conditions where memory is returned to the pool while GPU kernels are still
+reading from it.
+
+This method should be used instead of using the data tensor's own
+`set_deallocation_stream` method (if available), because that tensor does not
+own the memory and it is instead owned by an underlying matx::tensor.
+
+Parameters
+----------
+stream : int
+    The memory address of the CUDA stream that last accessed this tensor's data.
+
+)doc")
+}  // namespace RFArray
 
 }  // namespace holoscan::doc

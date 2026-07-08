@@ -74,4 +74,8 @@ struct RFArray {
     dlpack = std::move(other.dlpack);
     return *this;
   }
+
+  void set_deallocation_stream(cudaStream_t stream) {
+    matx::update_stream(data.GetStorage().data(), stream);
+  }
 };

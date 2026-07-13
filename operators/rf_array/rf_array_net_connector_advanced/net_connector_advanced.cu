@@ -446,12 +446,18 @@ void NetConnectorAdvanced::compute(InputContext& op_input, OutputContext& op_out
     while (burst_pkts_remaining > 0) {
       // Can't proceed until batch that we're aggregating packets into has been cleared from prior
       // processing, so wait for the corresponding event to complete
-      if (cudaEventQuery(events_[cur_idx]) != cudaSuccess) {
+      auto cuda_event_status = cudaEventQuery(events_[cur_idx]);
+      if (cuda_event_status == cudaSuccess) {
+        break;
+      } else if (cuda_event_status == cudaErrorNotReady) {
         HOLOSCAN_LOG_WARN(
             "Fell behind in processing on GPU! Waiting on event to clear batch with index {}",
             cur_idx);
         HOLOSCAN_CUDA_CALL_THROW_ERROR(cudaEventSynchronize(events_[cur_idx]),
                                        "Failed to synchronize on cleared batch");
+      } else {
+        HOLOSCAN_CUDA_CALL_THROW_ERROR(cuda_event_status,
+                                       "Encountered CUDA error trying to query event status");
       }
 
       auto num_pkts_to_copy =
@@ -561,12 +567,10 @@ void NetConnectorAdvanced::compute(InputContext& op_input, OutputContext& op_out
         auto cuda_err_status = cudaGetLastError();
         if (cuda_err_status != cudaSuccess) {
           HOLOSCAN_LOG_ERROR(
-              "CUDA error dispatching batch from queue number {} after {} total packets received: "
-              "{}",
+              "CUDA error dispatching batch from queue number {} after {} total packets received",
               cur_idx,
-              ttl_pkts_recv_,
-              cudaGetErrorString(cuda_err_status));
-          exit(1);
+              ttl_pkts_recv_);
+          HOLOSCAN_CUDA_CALL_THROW_ERROR(cuda_err_status, "CUDA error");
         }
         // Get updated buffer tracking information back to host
         buffer_track.transfer(streams_[cur_idx]);

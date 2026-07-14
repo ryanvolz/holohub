@@ -15,6 +15,7 @@
  * limitations under the License.
  */
 #include <chrono>
+#include <mutex>
 
 #include <yaml-cpp/yaml.h>
 
@@ -28,6 +29,9 @@
 using namespace holoscan::advanced_network;
 
 namespace holoscan::ops {
+
+// definition of static member
+std::mutex NetConnectorAdvanced::ano_mtx;
 
 void NetConnectorAdvanced::setup(OperatorSpec& spec) {
   // No output condition so operator will always run when input is available,
@@ -406,6 +410,7 @@ void NetConnectorAdvanced::compute(InputContext& op_input, OutputContext& op_out
   cudaStream_t op_stream = maybe_stream.value();
 
   if (!ano_initialized) {
+    std::lock_guard<std::mutex> guard(ano_mtx);
     if (adv_net_init(network_config) != Status::SUCCESS) {
       throw std::runtime_error("Failed to configure the Advance Network manager");
     }

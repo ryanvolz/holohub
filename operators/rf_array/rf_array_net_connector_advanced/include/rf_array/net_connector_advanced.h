@@ -17,6 +17,7 @@
 #pragma once
 
 #include <chrono>
+#include <mutex>
 #include <optional>
 
 #include <matx.h>
@@ -48,6 +49,7 @@ class NetConnectorAdvanced : public Operator {
   // Advanced network operator
   Parameter<YAML::Node> network_config_yaml_;
   holoscan::advanced_network::NetworkConfig network_config;
+  static std::mutex ano_mtx;
   bool ano_initialized = false;
 
   // Array settings

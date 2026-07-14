@@ -22,6 +22,7 @@
 
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
+#include <yaml-cpp/yaml.h>
 
 #include <holoscan/core/fragment.hpp>
 #include <holoscan/core/operator.hpp>
@@ -53,7 +54,7 @@ class PyNetConnectorAdvanced : public NetConnectorAdvanced {
       std::string interface_name = "rx_port", uint16_t queue_id = 0, bool gpu_direct = true,
       bool use_header_data_split = true, uint32_t no_output_warn_interval = 30,
       bool debug_print = false, int16_t packet_stream_priority = -1,
-      const std::string& name = "net_connector_advanced")
+      const std::string& advanced_network = "", const std::string& name = "net_connector_advanced")
       : NetConnectorAdvanced(ArgList{
             Arg{"buffer_size", buffer_size},
             Arg{"num_samples", num_samples},
@@ -77,6 +78,11 @@ class PyNetConnectorAdvanced : public NetConnectorAdvanced {
     if (header_metadata.has_value()) {
       this->add_arg(Arg{"header_metadata", header_metadata.value()});
     }
+    // parse advanced_network YAML string into NetworkConfig
+    YAML::Node yaml_node = YAML::Load(advanced_network);
+    holoscan::advanced_network::NetworkConfig network_config =
+        yaml_node.as<holoscan::advanced_network::NetworkConfig>();
+    this->add_arg(Arg{"advanced_network", network_config});
     add_positional_condition_and_resource_args(this, args);
     name_ = name;
     fragment_ = fragment;
@@ -112,6 +118,7 @@ void bind_rf_array_net_connector_advanced(py::module& m) {
                     uint32_t,
                     bool,
                     int16_t,
+                    const std::string&,
                     const std::string&>(),
            "fragment"_a,
            "buffer_size"_a,
@@ -133,6 +140,7 @@ void bind_rf_array_net_connector_advanced(py::module& m) {
            "no_output_warn_interval"_a = 30,
            "debug_print"_a = false,
            "packet_stream_priority"_a = -1,
+           "advanced_network"_a = "",
            "name"_a = "net_connector_advanced"s,
            doc::NetConnectorAdvanced::doc_NetConnectorAdvanced_python);
 }

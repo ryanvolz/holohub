@@ -155,6 +155,13 @@ void NetConnectorAdvanced::setup(OperatorSpec& spec) {
                       "Packet stream priority",
                       "Desired priority for the streams running the packet processing kernel",
                       -1);
+
+  // Advanced network operator config
+  spec.param<NetworkConfig>(network_config_,
+                            "advanced_network",
+                            "Advanced network config",
+                            "Advanced network operator configuration parameters",
+                            {});
 }
 
 void NetConnectorAdvanced::initialize() {
@@ -394,14 +401,20 @@ void NetConnectorAdvanced::compute(InputContext& op_input, OutputContext& op_out
   }
   cudaStream_t op_stream = maybe_stream.value();
 
+  if (!ano_initialized) {
+    if (adv_net_init(network_config_.get()) != Status::SUCCESS) {
+      throw std::runtime_error("Failed to configure the Advance Network manager");
+    }
+    ano_initialized = true;
+  }
+
   if (port_id_ == -1) {
     // initialize on first compute since we don't init the Advanced Network Operator until
     // the application starts in order to not collect packets until everything is ready
     port_id_ = get_port_id(interface_name_.get());
     if (port_id_ == -1) {
-      HOLOSCAN_LOG_ERROR("Invalid network interface {} specified in the config",
-                         interface_name_.get());
-      exit(1);
+      throw std::runtime_error(fmt::format("Invalid network interface {} specified in the config",
+                                           interface_name_.get()));
     }
   }
 
@@ -610,6 +623,11 @@ void NetConnectorAdvanced::stop() {
       ttl_pkts_recv_,
       buffer_track.total_output_samples,
       buffer_track.total_dropped_samples);
+
+  // advananced network manager shutdown
+  if (ano_initialized) {
+    shutdown();
+  }
 
   freeResources();
 }

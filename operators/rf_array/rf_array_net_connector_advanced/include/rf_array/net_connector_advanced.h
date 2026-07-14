@@ -71,6 +71,10 @@ class NetConnectorAdvanced : public Operator {
   Parameter<bool> debug_print_;
   Parameter<int16_t> packet_stream_priority_;
 
+  // Advanced network operator
+  Parameter<holoscan::advanced_network::NetworkConfig> network_config_;
+  bool ano_initialized = false;
+
   // Holds burst buffers that cannot be freed yet
   struct RxMsg {
     std::array<holoscan::advanced_network::BurstParams*, MAX_ANO_BATCHES> msg;

@@ -159,11 +159,11 @@ void DigitalRFSink<sampleType>::compute(InputContext& op_input, OutputContext& o
                                               is_continuous.get(),
                                               marching_dots.get());
     if (!drf_writer) {
-      HOLOSCAN_LOG_ERROR(
+      throw std::runtime_error(fmt::format(
           "Failed to initialize Digital RF writer with start_idx {}, sample_rate {}/{}. Exiting.",
           start_idx,
           sample_rate_numerator,
-          sample_rate_denominator);
+          sample_rate_denominator));
     }
   }
 
@@ -174,11 +174,11 @@ void DigitalRFSink<sampleType>::compute(InputContext& op_input, OutputContext& o
   auto result = digital_rf_write_hdf5(
       drf_writer, in.metadata.sample_idx - start_idx, host_data->Data(), host_data->Size(0));
   if (result) {
-    HOLOSCAN_LOG_ERROR("Digital RF write failed with error {}, sample_idx {}  write_len {}",
-                       result,
-                       in.metadata.sample_idx - start_idx,
-                       host_data->Size(0));
-    exit(result);
+    throw std::runtime_error(
+        fmt::format("Digital RF write failed with error {}, sample_idx {}  write_len {}",
+                    result,
+                    in.metadata.sample_idx - start_idx,
+                    host_data->Size(0)));
   }
 }
 
@@ -188,7 +188,8 @@ void DigitalRFSink<sampleType>::stop() {
   if (drf_writer) {
     auto result = digital_rf_close_write_hdf5(drf_writer);
     if (result) {
-      HOLOSCAN_LOG_ERROR("Failed to close Digital RF writer with error {}", result);
+      throw std::runtime_error(
+          fmt::format("Failed to close Digital RF writer with error {}", result));
     }
     drf_writer = nullptr;
   }

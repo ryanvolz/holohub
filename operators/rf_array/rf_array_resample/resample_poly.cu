@@ -56,13 +56,12 @@ void ResamplePoly::initialize() {
 
   out_chunk_size = chunk_size.get() * up.get();
   if (out_chunk_size % down.get()) {
-    HOLOSCAN_LOG_ERROR(
+    throw std::runtime_error(fmt::format(
         "ResamplePoly up {} / down {} with chunk_size {} does not result in an integer output "
         "chunk_size",
         up.get(),
         down.get(),
-        chunk_size.get());
-    exit(1);
+        chunk_size.get()));
   }
   out_chunk_size = out_chunk_size / down.get();
 

@@ -184,13 +184,12 @@ void NetConnectorAdvanced::initialize() {
   HOLOSCAN_LOG_INFO("Max samples per packet: {}", max_samples_per_packet);
 
   if (max_samples_per_packet * batch_size_.get() > num_samples_.get() * buffer_size_.get()) {
-    HOLOSCAN_LOG_ERROR(
+    throw std::runtime_error(fmt::format(
         "Specified packet batch_size produces more samples than can fit in the specified sample "
         "buffer (num_samples * buffer_size). Increase num_samples * buffer_size to at least {}, or "
         "decrease batch_size to at most {}",
         max_samples_per_packet * batch_size_.get(),
-        num_samples_.get() * buffer_size_.get() / max_samples_per_packet);
-    exit(1);
+        num_samples_.get() * buffer_size_.get() / max_samples_per_packet));
   }
 
   // Total number of I/Q samples per array
@@ -198,8 +197,7 @@ void NetConnectorAdvanced::initialize() {
 
   // Configuration checks
   if (use_hds_.get() && !gpu_direct_.get()) {
-    HOLOSCAN_LOG_ERROR("If Header-Data Split mode is enabled, GPUDirect needs to be too");
-    exit(1);
+    throw std::runtime_error("If Header-Data Split mode is enabled, GPUDirect needs to be too");
   }
 
   if (spoof_header_.get()) {
@@ -211,10 +209,10 @@ void NetConnectorAdvanced::initialize() {
     pkt_size = sizeof(sample_t) * num_subchannels_.get() * pkt_samples + packet_skip_bytes_.get();
     HOLOSCAN_LOG_WARN("Spoofing packet metadata, ignoring packet header.");
     if (pkt_size > max_packet_size_.get()) {
-      HOLOSCAN_LOG_ERROR("Max packets size ({}) can't fit the expected samples ({})",
-                         max_packet_size_.get(),
-                         pkt_samples);
-      exit(1);
+      throw std::runtime_error(
+          fmt::format("Max packets size ({}) can't fit the expected samples ({})",
+                      max_packet_size_.get(),
+                      pkt_samples));
     }
     // override max_packet_size_ since we know the fixed value
     max_packet_size_ = pkt_size;
@@ -278,9 +276,7 @@ void NetConnectorAdvanced::initialize() {
                                 buffer_size_.get() * sizeof(RFMetadata),
                                 cudaMemcpyDeviceToHost));
 
-  if (cudaGetLastError() != cudaSuccess) {
-    exit(1);
-  }
+  HOLOSCAN_CUDA_CALL_THROW_ERROR(cudaGetLastError(), "CUDA error");
 
   for (int n = 0; n < batch_capacity_.get(); n++) {
     // Warmup
@@ -301,10 +297,7 @@ void NetConnectorAdvanced::initialize() {
                       packet_skip_bytes_.get(),
                       debug_print_.get(),
                       streams_[n]);
-    if (cudaStreamSynchronize(streams_[n]) != cudaSuccess) {
-      HOLOSCAN_LOG_ERROR(cudaGetErrorString(cudaGetLastError()));
-      exit(1);
-    }
+    HOLOSCAN_CUDA_CALL_THROW_ERROR(cudaStreamSynchronize(streams_[n]), "CUDA error");
   }
 
   HOLOSCAN_LOG_INFO("NetConnectorAdvanced::initialize() complete");

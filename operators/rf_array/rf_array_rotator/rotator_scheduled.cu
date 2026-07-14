@@ -53,10 +53,10 @@ void RotatorScheduled::initialize() {
     auto start = sched_item.at("start");
     auto freq = sched_item.at("freq");
     if (start >= cycle_duration_secs.get()) {
-      HOLOSCAN_LOG_ERROR("Schedule step has start {} that is >= cycle_duration_secs {}",
-                         start,
-                         cycle_duration_secs.get());
-      exit(1);
+      throw std::runtime_error(
+          fmt::format("Schedule step has start {} that is >= cycle_duration_secs {}",
+                      start,
+                      cycle_duration_secs.get()));
     }
     schedule.emplace_back(start, freq);
   }

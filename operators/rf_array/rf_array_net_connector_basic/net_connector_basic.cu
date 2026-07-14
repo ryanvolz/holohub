@@ -400,15 +400,13 @@ void NetConnectorBasic::compute(InputContext& op_input, OutputContext& op_output
       // Can't proceed until batch that we're aggregating packets into has been cleared from prior
       // processing, so wait for the corresponding event to complete
       auto cuda_event_status = cudaEventQuery(events_[cur_idx]);
-      if (cuda_event_status == cudaSuccess) {
-        break;
-      } else if (cuda_event_status == cudaErrorNotReady) {
+      if (cuda_event_status == cudaErrorNotReady) {
         HOLOSCAN_LOG_WARN(
             "Fell behind in processing on GPU! Waiting on event to clear batch with index {}",
             cur_idx);
         HOLOSCAN_CUDA_CALL_THROW_ERROR(cudaEventSynchronize(events_[cur_idx]),
                                        "Failed to synchronize on cleared batch");
-      } else {
+      } else if (cuda_event_status != cudaSuccess) {
         HOLOSCAN_CUDA_CALL_THROW_ERROR(cuda_event_status,
                                        "Encountered CUDA error trying to query event status");
       }

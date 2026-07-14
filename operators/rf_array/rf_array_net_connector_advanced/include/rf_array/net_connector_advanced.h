@@ -20,6 +20,7 @@
 #include <optional>
 
 #include <matx.h>
+#include <yaml-cpp/yaml.h>
 
 #include "advanced_network/common.h"
 #include "holoscan/holoscan.hpp"
@@ -43,6 +44,11 @@ class NetConnectorAdvanced : public Operator {
 
  private:
   static constexpr int MAX_ANO_BATCHES = 10;  // Batches from ANO for one app batch
+
+  // Advanced network operator
+  Parameter<YAML::Node> network_config_yaml_;
+  holoscan::advanced_network::NetworkConfig network_config;
+  bool ano_initialized = false;
 
   // Array settings
   Parameter<uint16_t> buffer_size_;
@@ -70,10 +76,6 @@ class NetConnectorAdvanced : public Operator {
   Parameter<uint32_t> no_output_warn_interval_;
   Parameter<bool> debug_print_;
   Parameter<int16_t> packet_stream_priority_;
-
-  // Advanced network operator
-  Parameter<holoscan::advanced_network::NetworkConfig> network_config_;
-  bool ano_initialized = false;
 
   // Holds burst buffers that cannot be freed yet
   struct RxMsg {

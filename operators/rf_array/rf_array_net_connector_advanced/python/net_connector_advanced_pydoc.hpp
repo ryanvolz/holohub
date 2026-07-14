@@ -42,6 +42,8 @@ Parameters
 ----------
 fragment : Fragment
     The fragment that the operator belongs to.
+advanced_network : str
+    YAML string containing the Advanced Network manager configuration.
 buffer_size : int
     Max number of num_samples batches that can be held at once.
 num_samples : int

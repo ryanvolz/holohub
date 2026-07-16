@@ -57,7 +57,6 @@ void SubchannelSelect<sampleType>::initialize() {
 template <typename sampleType>
 void SubchannelSelect<sampleType>::compute(InputContext& op_input, OutputContext& op_output,
                                            ExecutionContext&) {
-  HOLOSCAN_LOG_TRACE("SubchannelSelect::compute() called");
   auto in_maybe = op_input.receive<RFArray<sampleType>>("rf_in");
   cudaStream_t stream = op_input.receive_cuda_stream("rf_in", true, false);
 

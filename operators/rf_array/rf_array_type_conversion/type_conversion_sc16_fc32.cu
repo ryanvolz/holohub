@@ -41,7 +41,6 @@ void TypeConversionComplexIntToFloat::initialize() {
  */
 void TypeConversionComplexIntToFloat::compute(InputContext& op_input, OutputContext& op_output,
                                               ExecutionContext&) {
-  HOLOSCAN_LOG_TRACE("TypeConversionComplexIntToFloat::compute() called");
   auto in_maybe = op_input.receive<RFArray<sample_t>>("rf_in");
   cudaStream_t stream = op_input.receive_cuda_stream("rf_in", true, false);
 

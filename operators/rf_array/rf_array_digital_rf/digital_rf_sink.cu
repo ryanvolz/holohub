@@ -109,7 +109,6 @@ void DigitalRFSink<sampleType>::initialize() {
 template <typename sampleType>
 void DigitalRFSink<sampleType>::compute(InputContext& op_input, OutputContext& op_output,
                                         ExecutionContext&) {
-  HOLOSCAN_LOG_TRACE("DigitalRFSink::compute() called");
   auto in_maybe = op_input.receive<RFArray<sampleType>>("rf_in");
   if (!in_maybe) {
     return;
@@ -117,7 +116,7 @@ void DigitalRFSink<sampleType>::compute(InputContext& op_input, OutputContext& o
   cudaStream_t stream = op_input.receive_cuda_stream("rf_in", true, false);
 
   auto in = in_maybe.value();
-  HOLOSCAN_LOG_DEBUG(
+  HOLOSCAN_LOG_TRACE(
       "Copying {} samples @ {} from GPU memory", in.data.Size(0), in.metadata.sample_idx);
 
   if (!host_data) {

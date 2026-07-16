@@ -304,7 +304,7 @@ std::vector<NetConnectorBasic::RxMsg> NetConnectorBasic::check_completed() {
     if (cudaEventQuery(first.evt) == cudaSuccess ||
         ((out_q.size() >= batch_capacity_.get()) &&
          (cudaEventSynchronize(first.evt) == cudaSuccess))) {
-      HOLOSCAN_LOG_DEBUG("Batch of packets successfully copied to GPU memory");
+      HOLOSCAN_LOG_TRACE("Batch of packets successfully copied to GPU memory");
       completed.push_back(first);
       out_q.pop();
     } else {
@@ -350,7 +350,6 @@ void NetConnectorBasic::check_completed_and_queue_arrays(OutputContext& op_outpu
 
 void NetConnectorBasic::compute(InputContext& op_input, OutputContext& op_output,
                                 ExecutionContext& context) {
-  HOLOSCAN_LOG_TRACE("NetConnectorBasic::compute() called");
   auto burst_maybe = op_input.receive<std::shared_ptr<NetworkOpBurstParams>>("burst_in");
   cudaStream_t op_stream = op_input.receive_cuda_stream("burst_in", true, false);
 
@@ -380,7 +379,7 @@ void NetConnectorBasic::compute(InputContext& op_input, OutputContext& op_output
   if (burst_maybe) {
     auto burst = burst_maybe.value();
 
-    HOLOSCAN_LOG_DEBUG(
+    HOLOSCAN_LOG_TRACE(
         "Handling burst of {} packets and {} bytes, with {} packets already in buffer",
         burst->num_pkts,
         burst->len,

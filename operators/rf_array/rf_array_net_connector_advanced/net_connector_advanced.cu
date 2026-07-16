@@ -342,7 +342,7 @@ std::vector<NetConnectorAdvanced::RxMsg> NetConnectorAdvanced::free_bufs() {
     if (cudaEventQuery(first.evt) == cudaSuccess ||
         ((out_q.size() >= batch_capacity_.get()) &&
          (cudaEventSynchronize(first.evt) == cudaSuccess))) {
-      HOLOSCAN_LOG_DEBUG("Batch of packets successfully copied to GPU memory");
+      HOLOSCAN_LOG_TRACE("Batch of packets successfully copied to GPU memory");
       completed.push_back(first);
       for (auto m = 0; m < first.num_batches; m++) { free_all_packets_and_burst_rx(first.msg[m]); }
       out_q.pop();
@@ -391,7 +391,6 @@ void NetConnectorAdvanced::free_bufs_and_queue_arrays(OutputContext& op_output,
 
 void NetConnectorAdvanced::compute(InputContext& op_input, OutputContext& op_output,
                                    ExecutionContext& context) {
-  HOLOSCAN_LOG_TRACE("NetConnectorAdvanced::compute() called");
   int64_t ttl_bytes_in_cur_batch_ = 0;
 
   auto maybe_stream = context.allocate_cuda_stream("op_stream");
@@ -452,7 +451,7 @@ void NetConnectorAdvanced::compute(InputContext& op_input, OutputContext& op_out
   if (burst_status == Status::SUCCESS) {
     auto burst_size = get_num_packets(burst);
 
-    HOLOSCAN_LOG_DEBUG("Handling burst of {} packets with {} packets already in buffer",
+    HOLOSCAN_LOG_TRACE("Handling burst of {} packets with {} packets already in buffer",
                        burst_size,
                        aggr_pkts_recv_);
 

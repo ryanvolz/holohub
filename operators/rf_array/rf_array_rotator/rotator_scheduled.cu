@@ -80,7 +80,6 @@ void RotatorScheduled::initialize() {
  */
 void RotatorScheduled::compute(InputContext& op_input, OutputContext& op_output,
                                ExecutionContext&) {
-  HOLOSCAN_LOG_TRACE("RotatorScheduled::compute() called");
   auto in_maybe = op_input.receive<RFArray<complex_t>>("rf_in");
   cudaStream_t stream = op_input.receive_cuda_stream("rf_in", true, false);
 
@@ -135,7 +134,7 @@ void RotatorScheduled::compute(InputContext& op_input, OutputContext& op_output,
     }
     auto step_freq = schedule[schedule_idx].second;
 
-    HOLOSCAN_LOG_DEBUG(
+    HOLOSCAN_LOG_TRACE(
         "Data timestamp {}: {} seconds since beginning of cycle, schedule index {}, step frequency "
         "{}",
         timestamp,

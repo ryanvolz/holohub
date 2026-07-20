@@ -53,6 +53,12 @@ void TypeConversionComplexIntToFloat::compute(InputContext& op_input, OutputCont
     auto new_shp = in.data.Shape();
     new_shp[1] = 2 * new_shp[1];
     auto in_data_float_view = in.data.View<real_t, 2, typeof(new_shp)>(std::move(new_shp));
+    // View doesn't increment the memory tracker counter to prevent deallocation of in.data's memory
+    // when it is destroyed at the end of this compute(), nor does it make the allocator aware that
+    // the memory is in use on this operator's stream. So we have to manually set this stream as
+    // the active stream for in.data so that deallocation will happen on this stream after all of
+    // the work we queue up using this memory, to prevent use after free errors.
+    matx::update_stream(in.data.GetStorage().data(), stream);
     auto in_data_float =
         matx::as_float(in_data_float_view) / (std::numeric_limits<real_t>::max() - 1);
 

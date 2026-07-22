@@ -76,6 +76,9 @@ struct RFArray {
   }
 
   void set_deallocation_stream(cudaStream_t stream) {
-    matx::update_stream(data.GetStorage().data(), stream);
+    void* data_ptr = data.GetStorage().data();
+    if (matx::IsAllocated(data_ptr)) {
+      matx::update_stream(data_ptr, stream);
+    }
   }
 };

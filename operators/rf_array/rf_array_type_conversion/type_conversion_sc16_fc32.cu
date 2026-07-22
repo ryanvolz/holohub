@@ -58,7 +58,10 @@ void TypeConversionComplexIntToFloat::compute(InputContext& op_input, OutputCont
     // the memory is in use on this operator's stream. So we have to manually set this stream as
     // the active stream for in.data so that deallocation will happen on this stream after all of
     // the work we queue up using this memory, to prevent use after free errors.
-    matx::update_stream(in.data.GetStorage().data(), stream);
+    void* data_ptr = in.data.GetStorage().data();
+    if (matx::IsAllocated(data_ptr)) {
+      matx::update_stream(data_ptr, stream);
+    }
     auto in_data_float =
         matx::as_float(in_data_float_view) / (std::numeric_limits<real_t>::max() - 1);
 

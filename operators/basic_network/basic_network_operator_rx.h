@@ -32,6 +32,7 @@ class BasicNetworkOpRx : public Operator {
   BasicNetworkOpRx() = default;
   ~BasicNetworkOpRx();
   void initialize() override;
+  void start() override;
   void setup(OperatorSpec& spec) override;
   void compute(InputContext&, OutputContext& op_output, ExecutionContext&) override;
 
@@ -41,6 +42,7 @@ class BasicNetworkOpRx : public Operator {
   Parameter<std::string> l4_proto_p_;
   Parameter<uint32_t> batch_size_;
   Parameter<uint16_t> max_payload_size_;
+  Parameter<int32_t> start_delay_ms_;
 
   int sockfd_;
   int tcp_sock_;

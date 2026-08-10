@@ -15,6 +15,7 @@
  * limitations under the License.
  */
 #include <chrono>
+#include <thread>
 
 #include "holoscan/holoscan.hpp"
 #include "holoscan/utils/cuda_macros.hpp"
@@ -138,6 +139,11 @@ void NetConnectorBasic::setup(OperatorSpec& spec) {
                       "Packet stream priority",
                       "Desired priority for the streams running the packet processing kernel",
                       -1);
+  spec.param<int32_t>(start_delay_ms_,
+                      "start_delay_ms",
+                      "Start delay",
+                      "Number of milliseconds to delay operator start",
+                      0);
 }
 
 void NetConnectorBasic::initialize() {
@@ -263,6 +269,14 @@ void NetConnectorBasic::initialize() {
   }
 
   HOLOSCAN_LOG_INFO("NetConnectorBasic::initialize() complete");
+}
+
+void NetConnectorBasic::start() {
+  HOLOSCAN_LOG_INFO("NetConnectorBasic::start()");
+
+  std::this_thread::sleep_for(std::chrono::milliseconds(start_delay_ms_.get()));
+
+  HOLOSCAN_LOG_INFO("NetConnectorBasic::start() complete");
 }
 
 void NetConnectorBasic::freeResources() {

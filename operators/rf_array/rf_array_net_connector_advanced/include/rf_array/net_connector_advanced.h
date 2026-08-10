@@ -38,6 +38,7 @@ class NetConnectorAdvanced : public Operator {
 
   void setup(OperatorSpec& spec) override;
   void initialize() override;
+  void start() override;
   void freeResources();
   void compute(InputContext& op_input, OutputContext& op_output,
                ExecutionContext& context) override;
@@ -78,6 +79,7 @@ class NetConnectorAdvanced : public Operator {
   Parameter<uint32_t> no_output_warn_interval_;
   Parameter<bool> debug_print_;
   Parameter<int16_t> packet_stream_priority_;
+  Parameter<int32_t> start_delay_ms_;
 
   // Holds burst buffers that cannot be freed yet
   struct RxMsg {

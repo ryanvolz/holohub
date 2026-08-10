@@ -14,8 +14,10 @@
  * limitations under the License.
  */
 
+#include <chrono>
 #include <memory>
 #include <string>
+#include <thread>
 
 #include "basic_network_operator_rx.h"
 
@@ -32,6 +34,11 @@ void BasicNetworkOpRx::setup(OperatorSpec& spec) {
   spec.param<uint32_t>(batch_size_, "batch_size", "Batch size", "Number of packets in batch");
   spec.param<uint16_t>(
       max_payload_size_, "max_payload_size", "Max payload size", "Largest payload size");
+  spec.param<int32_t>(start_delay_ms_,
+                      "start_delay_ms",
+                      "Start delay",
+                      "Number of milliseconds to delay operator start",
+                      0);
 }
 
 BasicNetworkOpRx::~BasicNetworkOpRx() {
@@ -88,6 +95,14 @@ void BasicNetworkOpRx::initialize() {
   } else {
     HOLOSCAN_LOG_INFO("Network RX operator bound to {}:{}", ip_addr_.get(), port_.get());
   }
+}
+
+void BasicNetworkOpRx::start() {
+  HOLOSCAN_LOG_INFO("BasicNetworkOpRx::start()");
+
+  std::this_thread::sleep_for(std::chrono::milliseconds(start_delay_ms_.get()));
+
+  HOLOSCAN_LOG_INFO("BasicNetworkOpRx::start() complete");
 }
 
 void BasicNetworkOpRx::compute([[maybe_unused]] InputContext&, OutputContext& op_output,

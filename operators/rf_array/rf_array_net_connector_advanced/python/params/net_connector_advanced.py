@@ -14,7 +14,6 @@
 # limitations under the License.
 
 from dataclasses import dataclass, field
-from typing import Optional
 
 from jsonargparse.typing import NonNegativeInt, PositiveInt
 
@@ -67,7 +66,7 @@ class NetConnectorAdvancedParams:
     """If spoofing packet header, number of bytes to skip at the beginning of each
     packet before reading data
     """
-    header_metadata: Optional[SpoofedHeaderMetadata] = field(
+    header_metadata: SpoofedHeaderMetadata | None = field(
         default_factory=lambda: SpoofedHeaderMetadata()
     )
     """Metadata values to use in spoofed header. The ``sample_idx`` cannot be specified
@@ -94,3 +93,5 @@ class NetConnectorAdvancedParams:
     """Whether packet kernel debug printing is enabled"""
     packet_stream_priority: int = -1
     """Desired priority for the streams running the packet processing kernel"""
+    start_delay_ms: int = 0
+    """Number of milliseconds to delay operator start"""

@@ -58,6 +58,8 @@ batch_size : int
     Number of packets in batch
 max_payload_size : int
     Maximum payload size expected from sender.
+start_delay_ms : int, optional
+    Number of milliseconds to delay operator start.
 )doc")
 
 // PyBasicNetworkOpTx Constructor

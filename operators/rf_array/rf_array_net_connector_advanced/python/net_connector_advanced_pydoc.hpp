@@ -87,6 +87,8 @@ debug_print : bool, optional
     Whether packet kernel debug printing is enabled.
 packet_stream_priority : int, optional
     Desired priority for the streams running the packet processing kernel.
+start_delay_ms : int, optional
+    Number of milliseconds to delay operator start.
 )doc")
 }  // namespace NetConnectorAdvanced
 

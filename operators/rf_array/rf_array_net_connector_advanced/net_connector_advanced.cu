@@ -16,6 +16,7 @@
  */
 #include <chrono>
 #include <mutex>
+#include <thread>
 
 #include <yaml-cpp/yaml.h>
 
@@ -168,6 +169,11 @@ void NetConnectorAdvanced::setup(OperatorSpec& spec) {
                       "Packet stream priority",
                       "Desired priority for the streams running the packet processing kernel",
                       -1);
+  spec.param<int32_t>(start_delay_ms_,
+                      "start_delay_ms",
+                      "Start delay",
+                      "Number of milliseconds to delay operator start",
+                      0);
 }
 
 void NetConnectorAdvanced::initialize() {
@@ -303,6 +309,29 @@ void NetConnectorAdvanced::initialize() {
   HOLOSCAN_LOG_INFO("NetConnectorAdvanced::initialize() complete");
 }
 
+void NetConnectorAdvanced::start() {
+  HOLOSCAN_LOG_INFO("NetConnectorAdvanced::start()");
+
+  std::this_thread::sleep_for(std::chrono::milliseconds(start_delay_ms_.get()));
+
+  // Start manager so packets are captured only after the specified delay
+  // and when compute will be called imminently
+  std::lock_guard<std::mutex> guard(ano_mtx);
+  if (adv_net_init(network_config) != Status::SUCCESS) {
+    throw std::runtime_error("Failed to configure the Advance Network manager");
+  }
+  ano_initialized = true;
+
+  // Port ID is not know until the network manager starts
+  port_id_ = get_port_id(interface_name_.get());
+  if (port_id_ == -1) {
+    throw std::runtime_error(
+        fmt::format("Invalid network interface {} specified in the config", interface_name_.get()));
+  }
+
+  HOLOSCAN_LOG_INFO("NetConnectorAdvanced::start() complete");
+}
+
 void NetConnectorAdvanced::freeResources() {
   HOLOSCAN_LOG_INFO("NetConnectorAdvanced::freeResources() start");
   for (int n = 0; n < batch_capacity_.get(); n++) {
@@ -400,24 +429,6 @@ void NetConnectorAdvanced::compute(InputContext& op_input, OutputContext& op_out
         fmt::format("Failed to allocate cuda stream with error: {}", error.what()));
   }
   cudaStream_t op_stream = maybe_stream.value();
-
-  if (!ano_initialized) {
-    std::lock_guard<std::mutex> guard(ano_mtx);
-    if (adv_net_init(network_config) != Status::SUCCESS) {
-      throw std::runtime_error("Failed to configure the Advance Network manager");
-    }
-    ano_initialized = true;
-  }
-
-  if (port_id_ == -1) {
-    // initialize on first compute since we don't init the Advanced Network Operator until
-    // the application starts in order to not collect packets until everything is ready
-    port_id_ = get_port_id(interface_name_.get());
-    if (port_id_ == -1) {
-      throw std::runtime_error(fmt::format("Invalid network interface {} specified in the config",
-                                           interface_name_.get()));
-    }
-  }
 
   if (!last_emit) {
     // on first run set the time of last emit

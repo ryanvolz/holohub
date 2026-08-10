@@ -54,7 +54,7 @@ class PyNetConnectorAdvanced : public NetConnectorAdvanced {
       uint32_t batch_size = 1000, uint16_t max_packet_size = 9000, uint16_t batch_capacity = 4,
       std::string interface_name = "rx_port", uint16_t queue_id = 0, bool gpu_direct = true,
       bool use_header_data_split = true, uint32_t no_output_warn_interval = 30,
-      bool debug_print = false, int16_t packet_stream_priority = -1,
+      bool debug_print = false, int16_t packet_stream_priority = -1, int32_t start_delay_ms = 0,
       const std::string& name = "net_connector_advanced")
       : NetConnectorAdvanced(ArgList{
             Arg{"advanced_network", YAML::Load(advanced_network)},
@@ -76,6 +76,7 @@ class PyNetConnectorAdvanced : public NetConnectorAdvanced {
             Arg{"no_output_warn_interval", no_output_warn_interval},
             Arg{"debug_print", debug_print},
             Arg{"packet_stream_priority", packet_stream_priority},
+            Arg{"start_delay_ms", start_delay_ms},
         }) {
     if (header_metadata.has_value()) {
       this->add_arg(Arg{"header_metadata", header_metadata.value()});
@@ -116,6 +117,7 @@ void bind_rf_array_net_connector_advanced(py::module& m) {
                     uint32_t,
                     bool,
                     int16_t,
+                    int32_t,
                     const std::string&>(),
            "fragment"_a,
            "advanced_network"_a,
@@ -138,6 +140,7 @@ void bind_rf_array_net_connector_advanced(py::module& m) {
            "no_output_warn_interval"_a = 30,
            "debug_print"_a = false,
            "packet_stream_priority"_a = -1,
+           "start_delay_ms"_a = 0,
            "name"_a = "net_connector_advanced"s,
            doc::NetConnectorAdvanced::doc_NetConnectorAdvanced_python);
 }

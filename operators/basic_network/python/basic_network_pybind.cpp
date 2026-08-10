@@ -46,13 +46,15 @@ class PyBasicNetworkOpRx : public BasicNetworkOpRx {
   // Define a constructor that fully initializes the object.
   PyBasicNetworkOpRx(Fragment* fragment, const py::args& args, std::string& ip_addr,
                      uint16_t dst_port, std::string& l4_proto, uint32_t batch_size,
-                     uint16_t max_payload_size, const std::string& name = "basic_network_rx")
+                     uint16_t max_payload_size, int32_t start_delay_ms = 0,
+                     const std::string& name = "basic_network_rx")
       : BasicNetworkOpRx(ArgList{
             Arg{"ip_addr", ip_addr},
             Arg{"dst_port", dst_port},
             Arg{"l4_proto", l4_proto},
             Arg{"batch_size", batch_size},
             Arg{"max_payload_size", max_payload_size},
+            Arg{"start_delay_ms", start_delay_ms},
         }) {
     add_positional_condition_and_resource_args(this, args);
     name_ = name;
@@ -135,6 +137,7 @@ PYBIND11_MODULE(_basic_network, m) {
                     std::string&,
                     uint32_t,
                     uint16_t,
+                    int32_t,
                     const std::string&>(),
            "fragment"_a,
            "ip_addr"_a,
@@ -142,6 +145,7 @@ PYBIND11_MODULE(_basic_network, m) {
            "l4_proto"_a,
            "batch_size"_a,
            "max_payload_size"_a,
+           "start_delay_ms"_a = 0,
            "name"_a = "basic_network_rx"s,
            doc::BasicNetwork::doc_BasicNetworkOpRx_python);
 

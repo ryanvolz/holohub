@@ -51,7 +51,6 @@ class BasicNetworkOpRx : public Operator {
   uint32_t byte_cnt_ = 0;
   uint8_t* pkt_buf = nullptr;
   uint32_t pkts_in_batch_ = 0;
-  bool connected_ = false;
 };
 
 };  // namespace holoscan::ops

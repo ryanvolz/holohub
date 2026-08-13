@@ -100,7 +100,31 @@ void BasicNetworkOpRx::initialize() {
 void BasicNetworkOpRx::start() {
   HOLOSCAN_LOG_INFO("BasicNetworkOpRx::start()");
 
+  sockaddr_in addr;
+  socklen_t from_len;
+  from_len = sizeof(addr);
+
   std::this_thread::sleep_for(std::chrono::milliseconds(start_delay_ms_.get()));
+
+  if (l4_proto_ == L4Proto::TCP) {
+    HOLOSCAN_LOG_INFO("Waiting for incoming TCP connection on {}:{}", ip_addr_.get(), port_.get());
+    if ((tcp_sock_ = accept(sockfd_, (struct sockaddr*)&server_addr_, (socklen_t*)&server_addr_)) <
+        0) {
+      HOLOSCAN_LOG_CRITICAL("Failed to accept incoming TCP connection");
+      throw;
+    }
+
+    HOLOSCAN_LOG_INFO("Successfully attached to incoming connection");
+  } else if (l4_proto_ == L4Proto::UDP) {
+    HOLOSCAN_LOG_DEBUG("Flushing UDP packet buffer on {}:{} before first compute() call",
+                       ip_addr_.get(),
+                       port_.get());
+    int n;
+    do {
+      n = recvfrom(sockfd_, nullptr, 0, MSG_DONTWAIT | MSG_TRUNC, (sockaddr*)&addr, &from_len);
+    } while (n > 0);
+    HOLOSCAN_LOG_DEBUG("UDP packet buffer cleared");
+  }
 
   HOLOSCAN_LOG_INFO("BasicNetworkOpRx::start() complete");
 }
@@ -111,30 +135,6 @@ void BasicNetworkOpRx::compute([[maybe_unused]] InputContext&, OutputContext& op
   sockaddr_in addr;
   socklen_t from_len;
   from_len = sizeof(addr);
-
-  if (!connected_) {
-    if (l4_proto_ == L4Proto::TCP) {
-      HOLOSCAN_LOG_INFO(
-          "Waiting for incoming TCP connection on {}:{}", ip_addr_.get(), port_.get());
-      if ((tcp_sock_ =
-               accept(sockfd_, (struct sockaddr*)&server_addr_, (socklen_t*)&server_addr_)) < 0) {
-        HOLOSCAN_LOG_CRITICAL("Failed to accept incoming TCP connection");
-        throw;
-      }
-
-      HOLOSCAN_LOG_INFO("Successfully attached to incoming connection");
-    } else if (l4_proto_ == L4Proto::UDP) {
-      HOLOSCAN_LOG_DEBUG("Flushing UDP packet buffer on {}:{} for first compute() call",
-                         ip_addr_.get(),
-                         port_.get());
-      int n;
-      do {
-        n = recvfrom(sockfd_, nullptr, 0, MSG_DONTWAIT | MSG_TRUNC, (sockaddr*)&addr, &from_len);
-      } while (n > 0);
-      HOLOSCAN_LOG_DEBUG("UDP packet buffer cleared");
-    }
-    connected_ = true;
-  }
 
   if (pkt_buf == nullptr) { pkt_buf = new uint8_t[max_payload_size_.get() * batch_size_.get()]; }
 

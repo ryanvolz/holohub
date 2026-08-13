@@ -49,23 +49,20 @@ void TypeConversionComplexFloatToInt::compute(InputContext& op_input, OutputCont
     auto in = in_maybe.value();
     HOLOSCAN_LOG_TRACE("Dim: {}, {}", in.data.Size(0), in.data.Size(1));
 
+    // copy input data so that it has a relationship with this stream (view doesn't do this) and
+    // thus deallocating the input data will only happen after we have a copy and can safely use it
+    auto in_data =
+        matx::make_tensor<complex_t>(in.data.Shape(), matx::MATX_ASYNC_DEVICE_MEMORY, stream);
+    matx::copy(in_data, in.data, stream);
+
     // convert the data from complex float to complex int
-    auto float_shp = in.data.Shape();
+    auto float_shp = in_data.Shape();
     float_shp[1] = 2 * float_shp[1];
-    auto in_data_float_view = in.data.View<float_t, 2, typeof(float_shp)>(std::move(float_shp));
-    // View doesn't increment the memory tracker counter to prevent deallocation of in.data's memory
-    // when it is destroyed at the end of this compute(), nor does it make the allocator aware that
-    // the memory is in use on this operator's stream. So we have to manually set this stream as
-    // the active stream for in.data so that deallocation will happen on this stream after all of
-    // the work we queue up using this memory, to prevent use after free errors.
-    void* data_ptr = in.data.GetStorage().data();
-    if (matx::IsAllocated(data_ptr)) {
-      matx::update_stream(data_ptr, stream);
-    }
+    auto in_data_float_view = in_data.View<float_t, 2, typeof(float_shp)>(std::move(float_shp));
 
     auto complex_int_data =
-        matx::make_tensor<sample_t>(in.data.Shape(), matx::MATX_ASYNC_DEVICE_MEMORY, stream);
-    auto real_shp = in.data.Shape();
+        matx::make_tensor<sample_t>(in_data.Shape(), matx::MATX_ASYNC_DEVICE_MEMORY, stream);
+    auto real_shp = in_data.Shape();
     real_shp[1] = 2 * real_shp[1];
     auto out_data_int_view =
         complex_int_data.View<real_t, 2, typeof(real_shp)>(std::move(real_shp));

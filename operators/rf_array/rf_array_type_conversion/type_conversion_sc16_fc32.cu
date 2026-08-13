@@ -49,24 +49,21 @@ void TypeConversionComplexIntToFloat::compute(InputContext& op_input, OutputCont
     auto in = in_maybe.value();
     HOLOSCAN_LOG_TRACE("Dim: {}, {}", in.data.Size(0), in.data.Size(1));
 
+    // copy input data so that it has a relationship with this stream (view doesn't do this) and
+    // thus deallocating the input data will only happen after we have a copy and can safely use it
+    auto in_data =
+        matx::make_tensor<sample_t>(in.data.Shape(), matx::MATX_ASYNC_DEVICE_MEMORY, stream);
+    matx::copy(in_data, in.data, stream);
+
     // convert the data from complex int to complex float
-    auto new_shp = in.data.Shape();
+    auto new_shp = in_data.Shape();
     new_shp[1] = 2 * new_shp[1];
-    auto in_data_float_view = in.data.View<real_t, 2, typeof(new_shp)>(std::move(new_shp));
-    // View doesn't increment the memory tracker counter to prevent deallocation of in.data's memory
-    // when it is destroyed at the end of this compute(), nor does it make the allocator aware that
-    // the memory is in use on this operator's stream. So we have to manually set this stream as
-    // the active stream for in.data so that deallocation will happen on this stream after all of
-    // the work we queue up using this memory, to prevent use after free errors.
-    void* data_ptr = in.data.GetStorage().data();
-    if (matx::IsAllocated(data_ptr)) {
-      matx::update_stream(data_ptr, stream);
-    }
+    auto in_data_float_view = in_data.View<real_t, 2, typeof(new_shp)>(std::move(new_shp));
     auto in_data_float =
         matx::as_float(in_data_float_view) / (std::numeric_limits<real_t>::max() - 1);
 
     auto complex_data =
-        matx::make_tensor<complex_t>(in.data.Shape(), matx::MATX_ASYNC_DEVICE_MEMORY, stream);
+        matx::make_tensor<complex_t>(in_data.Shape(), matx::MATX_ASYNC_DEVICE_MEMORY, stream);
     auto out_real = complex_data.RealView();
     auto out_imag = complex_data.ImagView();
     (out_real = matx::slice(in_data_float, {0, 0}, {matx::matxEnd, matx::matxEnd}, {1, 2}))

@@ -100,6 +100,8 @@ void DigitalRFSink<sampleType>::initialize() {
   channel_dir_path = std::filesystem::path(output_path.get()) / channel_dir.get();
   std::filesystem::create_directories(channel_dir_path);
 
+  cudaEventCreate(&host_copy_completed_event, cudaEventDisableTiming);
+
   HOLOSCAN_LOG_INFO("DigitalRFSink::initialize() done");
 }
 
@@ -115,6 +117,11 @@ void DigitalRFSink<sampleType>::compute(InputContext& op_input, OutputContext& o
   }
   cudaStream_t stream = op_input.receive_cuda_stream("rf_in", true, false);
 
+  // Wait for result from prior async write. An exception is thrown if it failed.
+  if (write_result.valid()) {
+    write_result.get();
+  }
+
   auto in = in_maybe.value();
   HOLOSCAN_LOG_TRACE(
       "Copying {} samples @ {} from GPU memory", in.data.Size(0), in.metadata.sample_idx);
@@ -129,10 +136,7 @@ void DigitalRFSink<sampleType>::compute(InputContext& op_input, OutputContext& o
 
   // copy incoming data/metadata to host-allocated memory
   matx::copy(*host_data, in.data, stream);
-
-  cudaEvent_t event;
-  cudaEventCreate(&event, cudaEventDisableTiming);
-  cudaEventRecord(event, stream);
+  cudaEventRecord(host_copy_completed_event, stream);
 
   // initialize writer using data specifications from the first array
   if (!drf_writer) {
@@ -166,23 +170,32 @@ void DigitalRFSink<sampleType>::compute(InputContext& op_input, OutputContext& o
     }
   }
 
-  // wait for copy to host memory to complete, then write
-  cudaEventSynchronize(event);
+  // copy of metadata because reference to in would go out of scope
+  write_result = std::async(std::launch::async, [&, in_metadata = in.metadata]() {
+    // wait for copy to host memory to complete, then write
+    cudaEventSynchronize(host_copy_completed_event);
 
-  HOLOSCAN_LOG_DEBUG("Writing {} samples @ {}", host_data->Size(0), in.metadata.sample_idx);
-  auto result = digital_rf_write_hdf5(
-      drf_writer, in.metadata.sample_idx - start_idx, host_data->Data(), host_data->Size(0));
-  if (result) {
-    throw std::runtime_error(
-        fmt::format("Digital RF write failed with error {}, sample_idx {}  write_len {}",
-                    result,
-                    in.metadata.sample_idx - start_idx,
-                    host_data->Size(0)));
-  }
+    HOLOSCAN_LOG_DEBUG("Writing {} samples @ {}", host_data->Size(0), in_metadata.sample_idx);
+    auto result = digital_rf_write_hdf5(
+        drf_writer, in_metadata.sample_idx - start_idx, host_data->Data(), host_data->Size(0));
+    if (result) {
+      throw std::runtime_error(
+          fmt::format("Digital RF write failed with error {}, sample_idx {}  write_len {}",
+                      result,
+                      in_metadata.sample_idx - start_idx,
+                      host_data->Size(0)));
+    }
+    return result;
+  });
 }
 
 template <typename sampleType>
 void DigitalRFSink<sampleType>::stop() {
+  // Wait for result from prior async write. An exception is thrown if it failed.
+  if (write_result.valid()) {
+    write_result.get();
+  }
+
   // clean up digital RF writer object
   if (drf_writer) {
     auto result = digital_rf_close_write_hdf5(drf_writer);

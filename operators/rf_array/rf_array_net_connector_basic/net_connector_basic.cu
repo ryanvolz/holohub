@@ -462,7 +462,8 @@ void NetConnectorBasic::compute(InputContext& op_input, OutputContext& op_output
                           ttl_pkts_recv_,            // only needed if spoofing packets
                           packet_skip_bytes_.get(),  // only needed if spoofing packets
                           debug_print_.get(),
-                          streams_[cur_idx]);
+                          op_stream);
+        // streams_[cur_idx]);
         auto cuda_err_status = cudaGetLastError();
         if (cuda_err_status != cudaSuccess) {
           HOLOSCAN_LOG_ERROR(
@@ -472,18 +473,21 @@ void NetConnectorBasic::compute(InputContext& op_input, OutputContext& op_output
           HOLOSCAN_CUDA_CALL_THROW_ERROR(cuda_err_status, "CUDA error");
         }
         // Get updated buffer tracking information back to host
-        buffer_track.transfer(streams_[cur_idx]);
+        // buffer_track.transfer(streams_[cur_idx]);
+        buffer_track.transfer(op_stream);
         // Get updated rf_metadata buffer back to host
         HOLOSCAN_CUDA_CALL_THROW_ERROR(cudaMemcpyAsync(rf_metadata_h,
                                                        rf_metadata_d,
                                                        buffer_size_.get() * sizeof(RFMetadata),
                                                        cudaMemcpyDeviceToHost,
-                                                       streams_[cur_idx]),
+                                                       op_stream),
+                                       // streams_[cur_idx]),
                                        "Failed to transfer rf_metadata");
 
-        HOLOSCAN_CUDA_CALL_THROW_ERROR(cudaEventRecord(events_[cur_idx], streams_[cur_idx]),
-                                       "Failed to record place_packet_data completed event");
-        cur_msg_.stream = streams_[cur_idx];
+        HOLOSCAN_CUDA_CALL_THROW_ERROR(
+            cudaEventRecord(events_[cur_idx], op_stream),  // streams_[cur_idx]),
+            "Failed to record place_packet_data completed event");
+        cur_msg_.stream = op_stream;  // streams_[cur_idx];
         cur_msg_.evt = events_[cur_idx];
         out_q.push(cur_msg_);
         cur_msg_.num_batches = 0;

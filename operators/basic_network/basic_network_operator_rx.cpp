@@ -151,6 +151,11 @@ void BasicNetworkOpRx::compute([[maybe_unused]] InputContext&, OutputContext& op
       byte_cnt_ += max_payload_size_.get();
       pkts_in_batch_++;
     } else {
+      HOLOSCAN_LOG_TRACE(
+          "Received {} bytes, exiting compute with {} bytes and {} packets for next batch",
+          n,
+          byte_cnt_,
+          pkts_in_batch_);
       return;
     }
   }

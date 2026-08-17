@@ -81,6 +81,17 @@ void BasicNetworkOpRx::initialize() {
     }
   }
 
+  HOLOSCAN_LOG_INFO("BasicNetworkOpRx::initialize() complete");
+}
+
+void BasicNetworkOpRx::start() {
+  HOLOSCAN_LOG_INFO("BasicNetworkOpRx::start()");
+
+  sockaddr_in addr;
+  socklen_t from_len;
+  from_len = sizeof(addr);
+
+  std::this_thread::sleep_for(std::chrono::milliseconds(start_delay_ms_.get()));
 
   if (bind(sockfd_, reinterpret_cast<const struct sockaddr*>(&server_addr_),
       sizeof(server_addr_)) < 0) {
@@ -95,16 +106,6 @@ void BasicNetworkOpRx::initialize() {
   } else {
     HOLOSCAN_LOG_INFO("Network RX operator bound to {}:{}", ip_addr_.get(), port_.get());
   }
-}
-
-void BasicNetworkOpRx::start() {
-  HOLOSCAN_LOG_INFO("BasicNetworkOpRx::start()");
-
-  sockaddr_in addr;
-  socklen_t from_len;
-  from_len = sizeof(addr);
-
-  std::this_thread::sleep_for(std::chrono::milliseconds(start_delay_ms_.get()));
 
   if (l4_proto_ == L4Proto::TCP) {
     HOLOSCAN_LOG_INFO("Waiting for incoming TCP connection on {}:{}", ip_addr_.get(), port_.get());
@@ -115,15 +116,6 @@ void BasicNetworkOpRx::start() {
     }
 
     HOLOSCAN_LOG_INFO("Successfully attached to incoming connection");
-  } else if (l4_proto_ == L4Proto::UDP) {
-    HOLOSCAN_LOG_DEBUG("Flushing UDP packet buffer on {}:{} before first compute() call",
-                       ip_addr_.get(),
-                       port_.get());
-    int n;
-    do {
-      n = recvfrom(sockfd_, nullptr, 0, MSG_DONTWAIT | MSG_TRUNC, (sockaddr*)&addr, &from_len);
-    } while (n > 0);
-    HOLOSCAN_LOG_DEBUG("UDP packet buffer cleared");
   }
 
   HOLOSCAN_LOG_INFO("BasicNetworkOpRx::start() complete");

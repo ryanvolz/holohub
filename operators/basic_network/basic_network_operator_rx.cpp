@@ -148,7 +148,7 @@ void BasicNetworkOpRx::compute([[maybe_unused]] InputContext&, OutputContext& op
     }
 
     if (n > 0) {
-      byte_cnt_ += n;
+      byte_cnt_ += max_payload_size_.get();
       pkts_in_batch_++;
     } else {
       return;

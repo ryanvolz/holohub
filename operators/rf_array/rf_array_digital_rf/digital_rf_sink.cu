@@ -179,8 +179,8 @@ void DigitalRFSink<sampleType>::compute(InputContext& op_input, OutputContext& o
     }
   }
 
-  // copy of metadata because we don't want to copy all of `in` and not allow data to be freed
-  write_result = std::async(std::launch::async, [=, in_metadata = in.metadata]() {
+  // copy of metadata because reference to in would go out of scope
+  write_result = std::async(std::launch::async, [&, in_metadata = in.metadata]() {
     // wait for copy to host memory to complete, then write
     cudaEventSynchronize(host_copy_completed_event);
 

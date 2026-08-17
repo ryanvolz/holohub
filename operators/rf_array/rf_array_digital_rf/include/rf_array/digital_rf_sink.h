@@ -68,7 +68,6 @@ class DigitalRFSink : public Operator {
   Digital_rf_write_object* drf_writer = nullptr;
   std::optional<matx::tensor_t<sampleType, 2>> host_data;
   cudaEvent_t host_copy_completed_event;
-  std::future<int> write_result;
 };  // DigitalRFSink
 
 }  // namespace holoscan::ops

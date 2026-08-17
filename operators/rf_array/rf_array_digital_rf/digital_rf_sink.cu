@@ -110,12 +110,13 @@ void DigitalRFSink<sampleType>::initialize() {
  */
 template <typename sampleType>
 void DigitalRFSink<sampleType>::compute(InputContext& op_input, OutputContext& op_output,
-                                        ExecutionContext&) {
+                                        ExecutionContext& context) {
   auto in_maybe = op_input.receive<RFArray<sampleType>>("rf_in");
   if (!in_maybe) {
     return;
   }
   cudaStream_t stream = op_input.receive_cuda_stream("rf_in", true, false);
+  auto input_stream_maybe = op_input.receive_cuda_streams("rf_in").front();
 
   // Wait for result from prior async write. An exception is thrown if it failed.
   if (write_result.valid()) {
@@ -137,6 +138,11 @@ void DigitalRFSink<sampleType>::compute(InputContext& op_input, OutputContext& o
   // copy incoming data/metadata to host-allocated memory
   matx::copy(*host_data, in.data, stream);
   cudaEventRecord(host_copy_completed_event, stream);
+  // make input stream wait for copy to finish before being able to free the input data,
+  // which will be queued on the input stream when compute() exits and its container is destroyed
+  if (input_stream_maybe) {
+    context.synchronize_streams({stream}, input_stream_maybe.value());
+  }
 
   // initialize writer using data specifications from the first array
   if (!drf_writer) {

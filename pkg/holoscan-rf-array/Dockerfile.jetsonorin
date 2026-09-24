@@ -303,6 +303,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         libcufft-${CUDA_VERSION_STRING} \
         libcurand-${CUDA_VERSION_STRING} \
         libcusolver-${CUDA_VERSION_STRING} \
+        libcusparse-${CUDA_VERSION_STRING} \
         libnvjitlink-${CUDA_VERSION_STRING} \
     && apt-get download cuda-compat-${CUDA_VERSION_STRING} \
     && dpkg-deb -R ./cuda-compat-${CUDA_VERSION_STRING}_*_arm64.deb ./cuda-compat \
@@ -322,8 +323,9 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         holoscan=${HOLOSCAN_VERSION}*
 
 # Install Python dependencies not covered by deb packages
-RUN python3 -m pip install --no-cache-dir "cloudpickle>=3.0,<4.0" cupy-cuda12x ipython numpy "pillow>=11.2" scipy
-RUN python3 -m pip install --no-cache-dir --no-deps holoscan==${HOLOSCAN_VERSION}
+RUN python3 -m pip install --no-cache-dir holoscan==${HOLOSCAN_VERSION} ipython numpy scipy
+# install cupy-cuda12x separately to force particular version and ignore holoscan deps
+RUN python3 -m pip install --no-cache-dir --upgrade cupy-cuda12x==14.2.0
 
 #
 # Install DPDK libraries from build stage

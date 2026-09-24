@@ -322,7 +322,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         holoscan=${HOLOSCAN_VERSION}*
 
 # Install Python dependencies not covered by deb packages
-RUN python3 -m pip install --no-cache-dir holoscan==${HOLOSCAN_VERSION} numpy cupy-cuda12x ipython scipy
+RUN python3 -m pip install --no-cache-dir "cloudpickle>=3.0,<4.0" cupy-cuda12x ipython numpy "pillow>=11.2" scipy
+RUN python3 -m pip install --no-cache-dir --no-deps holoscan==${HOLOSCAN_VERSION}
 
 #
 # Install DPDK libraries from build stage
